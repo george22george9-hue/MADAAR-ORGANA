@@ -17,6 +17,7 @@ import {
   JoinRequest,
   Meeting,
   AbsenceAlert,
+  ChurchNotification,
 } from '@/types/organa';
 
 export function isNeonConfigured(): boolean {
@@ -998,6 +999,10 @@ export async function bulkSaveServantAttendancePg(
         excuse,
         recorder.name,
       ]);
+
+      if (r.status === 'absent') {
+        sendServantAbsenceNotificationPg(servantId).catch(console.error);
+      }
     }
     await client.query('COMMIT');
     return true;
@@ -1047,7 +1052,99 @@ export async function updateAbsenceAlertStatusPg(alertId: string, status: string
 }
 
 // --------------------------------------------------------------------
-// 9. High-Performance Dashboard Aggregations
+// 9. Notifications & Pastoral Care Broadcasts
+// --------------------------------------------------------------------
+export async function getNotificationsPg(userId?: string, familyId?: string): Promise<ChurchNotification[]> {
+  let sql = `
+    SELECT * FROM notifications
+    WHERE target_type = 'all'
+  `;
+  const params: any[] = [];
+  if (userId) {
+    params.push(userId);
+    sql += ` OR (target_type = 'user' AND target_id = $${params.length})`;
+  }
+  if (familyId) {
+    params.push(familyId);
+    sql += ` OR (target_type = 'family' AND target_id = $${params.length})`;
+  }
+  sql += ` ORDER BY created_at DESC LIMIT 50`;
+
+  const rows = await queryPg(sql, params);
+  return rows.map(r => ({
+    ...r,
+    is_read: Boolean(r.is_read),
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
+}
+
+export async function createNotificationPg(data: {
+  target_type?: 'all' | 'servants' | 'family' | 'user';
+  target_id?: string;
+  sender_id?: string;
+  sender_name: string;
+  sender_role: string;
+  title: string;
+  message: string;
+  type?: 'priest_broadcast' | 'tuesday_prep' | 'servant_absence' | 'general';
+}): Promise<ChurchNotification> {
+  const id = `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  await queryPg(`
+    INSERT INTO notifications (id, target_type, target_id, sender_id, sender_name, sender_role, title, message, type, is_read, created_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false, now())
+  `, [
+    id,
+    data.target_type || 'all',
+    data.target_id || null,
+    data.sender_id || null,
+    data.sender_name,
+    data.sender_role,
+    data.title,
+    data.message,
+    data.type || 'general',
+  ]);
+
+  const row = await queryOnePg(`SELECT * FROM notifications WHERE id = $1`, [id]);
+  return {
+    ...row,
+    is_read: Boolean(row.is_read),
+    created_at: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+  };
+}
+
+export async function markNotificationAsReadPg(id: string): Promise<boolean> {
+  await queryPg(`UPDATE notifications SET is_read = true WHERE id = $1`, [id]);
+  return true;
+}
+
+export async function sendTuesdayNotebookReminderPg(senderName: string = 'إدارة الخدمة'): Promise<ChurchNotification> {
+  return createNotificationPg({
+    target_type: 'all',
+    sender_name: senderName,
+    sender_role: 'admin',
+    title: 'تذكير الثلاثاء: تحضير كشكول اللقاء والدرس',
+    message: 'تذكير خدمة كنيسة مارجرجس بسندبيس: موعدنا الجمعة القادمة، برجاء تحضير كشكول اللقاء والدرس.',
+    type: 'tuesday_prep',
+  });
+}
+
+export async function sendServantAbsenceNotificationPg(servantId: string): Promise<ChurchNotification | null> {
+  const servant = await queryOnePg(`SELECT * FROM servants WHERE id = $1`, [servantId]);
+  if (!servant) return null;
+
+  return createNotificationPg({
+    target_type: 'user',
+    target_id: servant.user_id || servant.id,
+    sender_name: 'إدارة الخدمة',
+    sender_role: 'admin',
+    title: 'افتقدناك اليوم في الخدمة',
+    message: `سلام ونعمة أ/ ${servant.full_name}.. افتقدناك اليوم في خدمة مارجرجس بسندبيس، بنصلي تكون بكل خير ونفرح بوجودك الجمعة القادمة.`,
+    type: 'servant_absence',
+  });
+}
+
+// --------------------------------------------------------------------
+// 10. High-Performance Dashboard Aggregations
 // --------------------------------------------------------------------
 export async function getDashboardDataPg() {
   const [fCount, sCount, mCount, mtgCount] = await Promise.all([

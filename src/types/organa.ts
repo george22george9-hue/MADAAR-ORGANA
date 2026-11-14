@@ -397,3 +397,17 @@ export interface JoinRequest {
   updated_at: string;
 }
 
+export interface ChurchNotification {
+  id: string;
+  target_type: 'all' | 'servants' | 'family' | 'user';
+  target_id?: string;
+  sender_id?: string;
+  sender_name: string;
+  sender_role: string;
+  title: string;
+  message: string;
+  type: 'priest_broadcast' | 'tuesday_prep' | 'servant_absence' | 'general';
+  is_read: boolean;
+  created_at: string;
+}
+
