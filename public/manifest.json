@@ -1,0 +1,62 @@
+{
+  "name": "أورجانا — كنيسة مارجرجس بسندبيس",
+  "short_name": "أورجانا",
+  "description": "منظومة إدارة خدمة الكنيسة ومدارس الأحد • كنيسة الشهيد العظيم مارجرجس بسندبيس",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F7F4F3",
+  "theme_color": "#702C3B",
+  "dir": "rtl",
+  "lang": "ar",
+  "categories": ["productivity", "education", "lifestyle"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "تسجيل الحضور الأسبوعي",
+      "short_name": "التحضير",
+      "description": "تسجيل حضور واعتذار المخدومين والخدام",
+      "url": "/attendance",
+      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "الكشاكيل الإلكترونية",
+      "short_name": "الكشاكيل",
+      "description": "متابعة كشاكيل الأسرة واللقاءات",
+      "url": "/notebooks",
+      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "تنبيهات الغياب والافتقاد",
+      "short_name": "التنبيهات",
+      "description": "متابعة الحالات التي تحتاج لافتقاد",
+      "url": "/alerts",
+      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192" }]
+    }
+  ]
+}

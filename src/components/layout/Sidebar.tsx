@@ -1,0 +1,146 @@
+'use client';
+
+// ====================================================================
+// ORGANA Sidebar — Simplified & Role-Based
+// Developed by MADAAR Technologies
+// ====================================================================
+
+import React from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useAuth } from '@/lib/context/auth-context';
+import {
+  LayoutDashboard,
+  Users,
+  UserCheck,
+  FolderTree,
+  CalendarCheck,
+  BookOpen,
+  AlertTriangle,
+  ShieldCheck,
+  Settings,
+  HeartHandshake,
+  BarChart3
+} from 'lucide-react';
+
+interface NavItem {
+  href: string;
+  label: string;
+  icon: any;
+  badge?: string;
+}
+
+export function Sidebar() {
+  const pathname = usePathname();
+  const { currentRole } = useAuth();
+
+  const getNavItems = (): NavItem[] => {
+    // ===== Admin / Priest =====
+    if (currentRole === 'admin' || currentRole === 'priest') {
+      return [
+        { href: '/dashboard', label: 'الرئيسية', icon: LayoutDashboard },
+        { href: '/attendance', label: 'تسجيل الحضور', icon: CalendarCheck },
+        { href: '/families', label: 'الأسر والقطاعات', icon: FolderTree },
+        { href: '/notebooks', label: 'الكشاكيل', icon: BookOpen },
+        { href: '/members', label: 'المخدومون', icon: Users },
+        { href: '/servants', label: 'الخدام', icon: UserCheck },
+        { href: '/alerts', label: 'تنبيهات الغياب', icon: AlertTriangle },
+        { href: '/reports', label: 'التقارير', icon: BarChart3 },
+        { href: '/users', label: 'إدارة المستخدمين', icon: ShieldCheck },
+        { href: '/settings', label: 'الإعدادات', icon: Settings },
+      ];
+    }
+
+    // ===== Service Secretary =====
+    if (currentRole === 'service_secretary') {
+      return [
+        { href: '/dashboard', label: 'الرئيسية', icon: LayoutDashboard },
+        { href: '/attendance', label: 'تسجيل الحضور', icon: CalendarCheck },
+        { href: '/notebooks', label: 'الكشاكيل', icon: BookOpen, badge: 'مراجعة' },
+        { href: '/families', label: 'الأسر والقطاعات', icon: FolderTree },
+        { href: '/servants', label: 'الخدام', icon: UserCheck },
+        { href: '/members', label: 'المخدومون', icon: Users },
+        { href: '/alerts', label: 'تنبيهات الغياب', icon: AlertTriangle },
+        { href: '/users', label: 'طلبات الانضمام', icon: ShieldCheck },
+        { href: '/settings', label: 'الإعدادات', icon: Settings },
+      ];
+    }
+
+    // ===== Family Leader =====
+    if (currentRole === 'family_leader') {
+      return [
+        { href: '/dashboard', label: 'الرئيسية', icon: LayoutDashboard },
+        { href: '/attendance', label: 'تسجيل الحضور', icon: CalendarCheck },
+        { href: '/notebooks', label: 'الكشكول', icon: BookOpen },
+        { href: '/members', label: 'مخدومو الأسرة', icon: Users },
+        { href: '/alerts', label: 'تنبيهات الغياب', icon: AlertTriangle },
+        { href: '/settings', label: 'الإعدادات', icon: Settings },
+      ];
+    }
+
+    // ===== Servant =====
+    return [
+      { href: '/dashboard', label: 'الرئيسية', icon: LayoutDashboard },
+      { href: '/attendance', label: 'تسجيل الحضور', icon: CalendarCheck },
+      { href: '/members', label: 'مخدوميني', icon: Users },
+      { href: '/tasks', label: 'مهام الافتقاد', icon: HeartHandshake },
+      { href: '/settings', label: 'الإعدادات', icon: Settings },
+    ];
+  };
+
+  const navItems = getNavItems();
+
+  return (
+    <aside className="w-56 bg-white border-l border-[#EAE3E4] flex flex-col h-screen sticky top-0 shrink-0 select-none hidden md:flex z-30">
+      {/* Brand Header */}
+      <div className="p-4 border-b border-[#EAE3E4]">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-lg bg-[#702C3B] text-white flex items-center justify-center font-bold text-base shadow-sm">
+            أ
+          </div>
+          <div>
+            <div className="font-bold text-sm text-[#421923]">أورجانا</div>
+            <div className="text-[10px] text-[#81777A]">مارجرجس بسندبيس</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Nav Items */}
+      <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
+        {navItems.map((item) => {
+          const isActive = pathname === item.href || 
+            (item.href !== '/dashboard' && pathname.startsWith(item.href));
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                isActive
+                  ? 'bg-[#702C3B] text-white shadow-sm'
+                  : 'text-[#282326] hover:bg-[#FAF5F6]'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Icon className={`w-4.5 h-4.5 shrink-0 ${isActive ? 'text-white' : 'text-[#81777A]'}`} />
+                <span>{item.label}</span>
+              </div>
+              {item.badge && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                  isActive ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {item.badge}
+                </span>
+              )}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Footer */}
+      <div className="p-3 border-t border-[#EAE3E4] text-center">
+        <div className="text-[10px] text-[#81777A]">MADAAR Technologies</div>
+      </div>
+    </aside>
+  );
+}
