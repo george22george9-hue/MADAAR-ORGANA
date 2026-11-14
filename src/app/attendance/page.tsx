@@ -10,7 +10,7 @@ import React, { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/lib/context/auth-context';
-import { Meeting, AttendanceStatus } from '@/types/organa';
+import { Meeting, AttendanceStatus, Family } from '@/types/organa';
 import {
   CalendarCheck,
   Users,
@@ -29,16 +29,49 @@ import {
   Church,
   BookOpen,
   Sparkles,
-  AlertTriangle
+  AlertTriangle,
+  ChevronRight,
+  ChevronLeft,
+  X
 } from 'lucide-react';
+
+function getClosestFriday(base: Date = new Date()): string {
+  const d = new Date(base);
+  const day = d.getDay(); // 0 = Sun, ... 5 = Fri, 6 = Sat
+  const diff = day >= 5 ? day - 5 : day + 2;
+  d.setDate(d.getDate() - diff);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dayStr = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dayStr}`;
+}
+
+function stepFriday(currentDateStr: string, direction: -1 | 1): string {
+  if (!currentDateStr) return getClosestFriday();
+  const [y, m, d] = currentDateStr.split('-').map(Number);
+  const dateObj = new Date(y, m - 1, d);
+  dateObj.setDate(dateObj.getDate() + direction * 7);
+  const newY = dateObj.getFullYear();
+  const newM = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const newD = String(dateObj.getDate()).padStart(2, '0');
+  return `${newY}-${newM}-${newD}`;
+}
 
 function AttendanceContent() {
   const searchParams = useSearchParams();
   const meetingParamId = searchParams.get('meetingId');
-  const { currentRole, assignedFamilyId } = useAuth();
+  const { currentRole, assignedFamilyId, canManageAllFamilies } = useAuth();
 
+  const [families, setFamilies] = useState<Family[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [selectedFamilyId, setSelectedFamilyId] = useState<string>(assignedFamilyId || 'fam-prep-boys');
+  const [selectedDate, setSelectedDate] = useState<string>(getClosestFriday());
   const [selectedMeetingId, setSelectedMeetingId] = useState<string>('');
+
+  // Calendar Modal State
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
+
   const [activeTab, setActiveTab] = useState<'members' | 'servants'>('members');
   const [search, setSearch] = useState('');
 
@@ -49,7 +82,24 @@ function AttendanceContent() {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Load Meetings
+  // 1. Load Families
+  useEffect(() => {
+    fetch('/api/families')
+      .then(r => r.json())
+      .then(res => {
+        if (res.success && res.families.length > 0) {
+          setFamilies(res.families);
+          if (assignedFamilyId) {
+            setSelectedFamilyId(assignedFamilyId);
+          } else if (!selectedFamilyId) {
+            setSelectedFamilyId(res.families[0].id);
+          }
+        }
+      })
+      .catch(console.error);
+  }, [assignedFamilyId]);
+
+  // 2. Load Meetings
   useEffect(() => {
     const famParam = (currentRole === 'family_leader' || currentRole === 'servant') && assignedFamilyId 
       ? `&userFamilyId=${assignedFamilyId}&familyId=${assignedFamilyId}` 
@@ -58,18 +108,51 @@ function AttendanceContent() {
       .then(r => r.json())
       .then(res => {
         if (res.success && res.meetings.length > 0) {
-          // Sort by date descending (nearest/upcoming first)
           const sorted = [...res.meetings].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
           setMeetings(sorted);
-          const initialMeetingId = meetingParamId && sorted.some((m: any) => m.id === meetingParamId)
-            ? meetingParamId
-            : sorted[0].id;
-          setSelectedMeetingId(initialMeetingId);
+
+          if (meetingParamId) {
+            const foundParam = sorted.find((m: any) => m.id === meetingParamId);
+            if (foundParam) {
+              setSelectedFamilyId(foundParam.family_id);
+              setSelectedDate(foundParam.date);
+              setSelectedMeetingId(foundParam.id);
+            }
+          }
         }
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, [currentRole, meetingParamId, assignedFamilyId]);
+
+  // 3. Resolve Meeting when selectedFamilyId or selectedDate changes
+  useEffect(() => {
+    if (!selectedFamilyId || !selectedDate || meetings.length === 0) return;
+    const match = meetings.find(m => m.family_id === selectedFamilyId && m.date === selectedDate);
+    if (match) {
+      setSelectedMeetingId(match.id);
+    } else {
+      // Auto-create meeting if not pre-populated
+      fetch('/api/meetings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          family_id: selectedFamilyId,
+          date: selectedDate,
+          title: `لقاء الجمعة (${selectedDate})`,
+          actorRole: currentRole,
+        }),
+      })
+        .then(r => r.json())
+        .then(res => {
+          if (res.success && res.meeting) {
+            setMeetings(prev => [res.meeting, ...prev]);
+            setSelectedMeetingId(res.meeting.id);
+          }
+        })
+        .catch(console.error);
+    }
+  }, [selectedFamilyId, selectedDate, meetings, currentRole]);
 
   // Load Attendance for selected meeting
   const loadAttendance = (mId: string) => {
@@ -240,16 +323,24 @@ function AttendanceContent() {
     !search || s.servant_name?.includes(search) || s.phone?.includes(search)
   );
 
-  const currentMeetingObj = meetings.find(m => m.id === selectedMeetingId);
+  const currentCalYear = calendarMonth.getFullYear();
+  const currentCalMonth = calendarMonth.getMonth();
+  const firstDayOfMonth = new Date(currentCalYear, currentCalMonth, 1).getDay();
+  const startOffset = (firstDayOfMonth + 1) % 7;
+  const daysInMonth = new Date(currentCalYear, currentCalMonth + 1, 0).getDate();
+  const monthNameArabic = calendarMonth.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' });
 
-  const formattedMeetingDate = currentMeetingObj
-    ? new Date(currentMeetingObj.date).toLocaleDateString('ar-EG', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      })
-    : '';
+  const formattedDateArabic = (() => {
+    if (!selectedDate) return '';
+    const [y, m, d] = selectedDate.split('-').map(Number);
+    const dateObj = new Date(y, m - 1, d);
+    return dateObj.toLocaleDateString('ar-EG', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  })();
 
   return (
     <AppLayout>
@@ -267,40 +358,224 @@ function AttendanceContent() {
           </span>
         </div>
 
-        {/* Meeting Dropdown Selector Card */}
-        <div className="bg-white rounded-2xl border border-[#EAE3E4] p-3 shadow-xs space-y-2">
-          <div className="flex items-center justify-between text-xs text-[#81777A]">
-            <span className="font-bold flex items-center gap-1.5 text-[#421923]">
-              <Calendar className="w-4 h-4 text-[#702C3B]" />
-              اختر موعد الجمعة والأسرة:
-            </span>
-            <span className="text-[11px] font-mono text-[#702C3B]">
-              {formattedMeetingDate}
-            </span>
+        {/* ============================================================== */}
+        {/* DUAL SELECTOR BAR: 1) FAMILY BUTTON, 2) FRIDAY CALENDAR PICKER   */}
+        {/* ============================================================== */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* 1. زرار وقائمة اختيار الأسرة */}
+          <div className="bg-white rounded-2xl border border-[#EAE3E4] p-3.5 shadow-xs space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold flex items-center gap-1.5 text-[#421923]">
+                <Users className="w-4 h-4 text-[#702C3B]" />
+                الأسرة الكنسية:
+              </span>
+              <span className="text-[10px] text-[#81777A]">
+                {canManageAllFamilies ? 'اختر الأسرة' : '🔒 أسرتك المعتمدة'}
+              </span>
+            </div>
+
+            <div className="relative">
+              <select
+                value={selectedFamilyId}
+                disabled={!canManageAllFamilies}
+                onChange={(e) => setSelectedFamilyId(e.target.value)}
+                className="w-full p-2.5 pr-3 pl-8 text-xs font-bold rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] text-[#421923] focus:outline-none focus:border-[#702C3B] cursor-pointer"
+              >
+                {families.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          <div className="relative">
-            <select
-              value={selectedMeetingId}
-              onChange={(e) => setSelectedMeetingId(e.target.value)}
-              className="w-full p-2.5 pr-3 pl-8 text-xs font-bold rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] text-[#421923] focus:outline-none focus:border-[#702C3B] cursor-pointer"
-            >
-              {meetings.map((m) => {
-                const dateStr = new Date(m.date).toLocaleDateString('ar-EG', {
-                  weekday: 'long',
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric'
-                });
-                return (
-                  <option key={m.id} value={m.id}>
-                    {dateStr} — {m.family_name}
-                  </option>
-                );
-              })}
-            </select>
+          {/* 2. زرار ولوحة تقويم احترافية لاختيار الجمعة */}
+          <div className="bg-white rounded-2xl border border-[#EAE3E4] p-3.5 shadow-xs space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold flex items-center gap-1.5 text-[#421923]">
+                <Calendar className="w-4 h-4 text-[#702C3B]" />
+                موعد لقاء الجمعة:
+              </span>
+              <span className="text-[11px] font-bold text-[#702C3B] truncate max-w-[140px]">
+                {formattedDateArabic}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setSelectedDate(prev => stepFriday(prev, -1))}
+                className="px-2.5 py-2 rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] text-[#421923] hover:bg-[#EAE3E4] text-xs font-bold transition-all flex items-center gap-1"
+                title="الجمعة السابقة"
+              >
+                <ChevronRight className="w-4 h-4" />
+                <span className="hidden sm:inline">السابقة</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const [y, m, d] = selectedDate.split('-').map(Number);
+                  setCalendarMonth(new Date(y, m - 1, d));
+                  setShowCalendarModal(true);
+                }}
+                className="flex-1 py-2 px-2 rounded-xl bg-[#702C3B] hover:bg-[#5A232F] text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs"
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>لوحة التقويم 📅</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedDate(prev => stepFriday(prev, 1))}
+                className="px-2.5 py-2 rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] text-[#421923] hover:bg-[#EAE3E4] text-xs font-bold transition-all flex items-center gap-1"
+                title="الجمعة التالية"
+              >
+                <span className="hidden sm:inline">التالية</span>
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* ============================================================== */}
+        {/* MODAL: PROFESSIONAL FRIDAY CALENDAR PICKER                      */}
+        {/* ============================================================== */}
+        {showCalendarModal && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in">
+            <div className="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl border border-[#EAE3E4] space-y-4 animate-in zoom-in-95">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-[#EAE3E4] pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-[#702C3B]/10 text-[#702C3B] flex items-center justify-center font-bold">
+                    <Calendar className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-[#421923]">تقويم لقاءات الجمعة</h3>
+                    <div className="text-[10px] text-[#81777A]">اختر تاريخ الجمعة لتسجيل حضور مدارس الأحد</div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowCalendarModal(false)}
+                  className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-700"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Month Navigation */}
+              <div className="flex items-center justify-between bg-[#FAF5F6] p-2 rounded-2xl border border-[#EAE3E4]">
+                <button
+                  type="button"
+                  onClick={() => setCalendarMonth(new Date(currentCalYear, currentCalMonth - 1, 1))}
+                  className="p-1.5 rounded-xl hover:bg-white text-[#702C3B] font-bold text-xs flex items-center gap-1"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                  <span>الشهر السابق</span>
+                </button>
+
+                <span className="font-bold text-xs text-[#421923]">
+                  {monthNameArabic}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => setCalendarMonth(new Date(currentCalYear, currentCalMonth + 1, 1))}
+                  className="p-1.5 rounded-xl hover:bg-white text-[#702C3B] font-bold text-xs flex items-center gap-1"
+                >
+                  <span>الشهر التالي</span>
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Quick Jump to Closest Friday */}
+              <button
+                type="button"
+                onClick={() => {
+                  const todayFriday = getClosestFriday();
+                  setSelectedDate(todayFriday);
+                  setShowCalendarModal(false);
+                }}
+                className="w-full py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                <span>الذهاب لأقرب جمعة ({getClosestFriday()})</span>
+              </button>
+
+              {/* Weekday Names Header */}
+              <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-[#81777A] border-b border-gray-100 pb-1.5">
+                {['سبت', 'أحد', 'اثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة'].map((dayName, idx) => (
+                  <div
+                    key={idx}
+                    className={`py-1 rounded-lg ${idx === 6 ? 'text-[#702C3B] font-black bg-rose-50 border border-rose-100' : ''}`}
+                  >
+                    {dayName}
+                  </div>
+                ))}
+              </div>
+
+              {/* Days Grid */}
+              <div className="grid grid-cols-7 gap-1 text-center text-xs">
+                {/* Empty cells before month start */}
+                {Array.from({ length: startOffset }).map((_, idx) => (
+                  <div key={`empty-${idx}`} className="h-9" />
+                ))}
+
+                {/* Days of the month */}
+                {Array.from({ length: daysInMonth }).map((_, idx) => {
+                  const dayNum = idx + 1;
+                  const dateObj = new Date(currentCalYear, currentCalMonth, dayNum);
+                  const isFriday = dateObj.getDay() === 5;
+                  const dateStr = `${currentCalYear}-${String(currentCalMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+                  const isSelected = selectedDate === dateStr;
+
+                  return (
+                    <button
+                      key={dayNum}
+                      type="button"
+                      onClick={() => {
+                        setSelectedDate(dateStr);
+                        setShowCalendarModal(false);
+                      }}
+                      className={`h-9 rounded-xl font-bold transition-all flex flex-col items-center justify-center text-xs relative ${
+                        isSelected
+                          ? 'bg-amber-500 text-white shadow-md ring-2 ring-amber-300 font-black'
+                          : isFriday
+                            ? 'bg-[#702C3B] text-white hover:bg-[#5A232F] shadow-xs'
+                            : 'bg-white hover:bg-gray-100 text-[#282326]'
+                      }`}
+                    >
+                      <span>{dayNum}</span>
+                      {isFriday && !isSelected && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-300 mt-0.5" />
+                      )}
+                      {isSelected && (
+                        <span className="text-[8px] leading-none">✓</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Direct date picker fallback */}
+              <div className="pt-2 border-t border-[#EAE3E4] flex items-center justify-between gap-2 text-xs">
+                <span className="text-[10px] text-[#81777A]">أو اكتب تاريخاً يدوياً:</span>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setSelectedDate(e.target.value);
+                      setShowCalendarModal(false);
+                    }
+                  }}
+                  className="p-1.5 rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] text-xs font-bold text-[#421923] focus:outline-none focus:border-[#702C3B]"
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 4 Stats Pill Cards Row */}
         <div className="grid grid-cols-4 gap-2">

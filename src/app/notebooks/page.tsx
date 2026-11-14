@@ -65,11 +65,12 @@ export default function NotebooksPage() {
     return matchesSearch && matchesFamily;
   });
 
-  // Calculate metrics
-  const totalReportsCount = 12;
-  const submittedCount = 10;
-  const underReviewCount = 2;
-  const approvedCount = 8;
+  // Calculate real metrics from actual database reports
+  const totalReportsCount = reports.length;
+  const approvedCount = reports.filter(r => r.status === 'approved').length;
+  const underReviewCount = reports.filter(r => r.status === 'under_review' || r.status === 'submitted').length;
+  const submittedCount = approvedCount + underReviewCount;
+  const completionRate = totalReportsCount > 0 ? Math.round((submittedCount / totalReportsCount) * 100) : 0;
 
   const handleExportExcel = () => {
     exportToExcel(
@@ -156,44 +157,25 @@ export default function NotebooksPage() {
                 : 'bg-white border border-[#EAE3E4] text-[#282326] hover:bg-[#FAF5F6]'
             }`}
           >
-            الكل (12)
+            الكل ({reports.length})
           </button>
 
-          <button
-            onClick={() => setFamilyFilter('fam-prep-boys')}
-            className={`px-4 py-1.5 rounded-full font-bold whitespace-nowrap transition-all shadow-2xs ${
-              familyFilter === 'fam-prep-boys'
-                ? 'bg-[#5A1E2D] text-white'
-                : 'bg-white border border-[#EAE3E4] text-[#282326] hover:bg-[#FAF5F6]'
-            }`}
-          >
-            إعدادي بنين
-          </button>
-
-          <button
-            onClick={() => setFamilyFilter('fam-nursery')}
-            className={`px-4 py-1.5 rounded-full font-bold whitespace-nowrap transition-all shadow-2xs ${
-              familyFilter === 'fam-nursery'
-                ? 'bg-[#5A1E2D] text-white'
-                : 'bg-white border border-[#EAE3E4] text-[#282326] hover:bg-[#FAF5F6]'
-            }`}
-          >
-            حضانة وملائكة
-          </button>
-
-          <button
-            onClick={() => setFamilyFilter('fam-primary-3-4')}
-            className={`px-4 py-1.5 rounded-full font-bold whitespace-nowrap transition-all shadow-2xs ${
-              familyFilter === 'fam-primary-3-4'
-                ? 'bg-[#5A1E2D] text-white'
-                : 'bg-white border border-[#EAE3E4] text-[#282326] hover:bg-[#FAF5F6]'
-            }`}
-          >
-            ابتدائي بنات
-          </button>
+          {families.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => setFamilyFilter(f.id)}
+              className={`px-4 py-1.5 rounded-full font-bold whitespace-nowrap transition-all shadow-2xs ${
+                familyFilter === f.id
+                  ? 'bg-[#5A1E2D] text-white'
+                  : 'bg-white border border-[#EAE3E4] text-[#282326] hover:bg-[#FAF5F6]'
+              }`}
+            >
+              {f.name}
+            </button>
+          ))}
         </div>
 
-        {/* 3 Metric Cards Strip (Image 4 Exact Layout) */}
+        {/* 3 Metric Cards Strip */}
         <div className="grid grid-cols-3 gap-2 text-center">
           {/* Box 1: الكشاكيل المقدمة */}
           <div className="bg-white p-3 rounded-2xl border border-[#EAE3E4] shadow-2xs">
@@ -203,7 +185,7 @@ export default function NotebooksPage() {
             <span className="text-lg md:text-xl font-bold text-[#282326] block my-1">
               {submittedCount} / {totalReportsCount}
             </span>
-            <span className="text-[10px] text-[#166534] font-bold block">83% إنجاز</span>
+            <span className="text-[10px] text-[#166534] font-bold block">{completionRate}% إنجاز</span>
           </div>
 
           {/* Box 2: قيد المراجعة */}
@@ -230,7 +212,16 @@ export default function NotebooksPage() {
         </div>
 
         {/* Lesson Notebook Cards */}
-        <div className="space-y-3">
+        {filteredReports.length === 0 ? (
+          <div className="bg-white rounded-3xl border border-[#EAE3E4] p-8 text-center space-y-2 shadow-2xs">
+            <BookOpen className="w-8 h-8 text-[#702C3B] mx-auto opacity-60" />
+            <h3 className="font-bold text-sm text-[#421923]">لا توجد كشاكيل مسجلة حالياً</h3>
+            <p className="text-xs text-[#81777A] max-w-sm mx-auto leading-relaxed">
+              تم تطهير البيانات الوهمية بنجاح. بمجرد قيام الخدام وأمناء الأسر بتسجيل كشكول اللقاء الأسبوعي ستظهر التقارير هنا مباشرة.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
           {filteredReports.map((rep, idx) => {
             const isApproved = rep.status === 'approved' || idx >= 2;
             const isUnderReview = !isApproved;
@@ -329,6 +320,7 @@ export default function NotebooksPage() {
             );
           })}
         </div>
+        )}
 
         {/* Bottom Mint Green Reminder Box */}
         <div className="p-3.5 rounded-2xl bg-[#ECFDF5] border border-[#BBF7D0] flex items-center justify-between text-xs text-[#065F46]">
