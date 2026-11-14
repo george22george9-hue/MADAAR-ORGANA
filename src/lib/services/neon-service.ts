@@ -1259,13 +1259,13 @@ export async function markNotificationAsReadPg(id: string): Promise<boolean> {
   return true;
 }
 
-export async function sendTuesdayNotebookReminderPg(senderName: string = 'إدارة الخدمة'): Promise<ChurchNotification> {
+export async function sendTuesdayNotebookReminderPg(senderName: string = 'إدارة الأبلكيشن'): Promise<ChurchNotification> {
   return createNotificationPg({
     target_type: 'all',
     sender_name: senderName,
     sender_role: 'admin',
-    title: 'تذكير الثلاثاء: تحضير كشكول اللقاء والدرس',
-    message: 'تذكير خدمة كنيسة مارجرجس بسندبيس: موعدنا الجمعة القادمة، برجاء تحضير كشكول اللقاء والدرس.',
+    title: 'تذكير تحضير الكشكول 📓',
+    message: 'برجاء التأكيد من التحضير وارسال الكشكول في الموعد المحدد.',
     type: 'tuesday_prep',
   });
 }

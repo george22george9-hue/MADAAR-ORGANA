@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
 
     // 2. Trigger Tuesday Notebook Preparation Reminder
     if (action === 'tuesday_reminder') {
-      const senderName = body.senderName || 'إدارة الخدمة';
+      const senderName = body.senderName || 'إدارة الأبلكيشن';
       if (isNeonConfigured()) {
         const notif = await sendTuesdayNotebookReminderPg(senderName);
         // Deliver lock-screen push notification to all servants

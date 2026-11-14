@@ -43,7 +43,7 @@ export function NotificationBanner() {
             fetch('/api/notifications', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'tuesday_reminder', senderName: 'خدمة مارجرجس بسندبيس' }),
+              body: JSON.stringify({ action: 'tuesday_reminder', senderName: 'إدارة الأبلكيشن' }),
             })
               .then(() => localStorage.setItem(tuesdayKey, 'true'))
               .catch(() => {});
