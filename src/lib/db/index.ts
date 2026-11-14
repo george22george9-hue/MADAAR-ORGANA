@@ -409,7 +409,106 @@ function initSchema(db: Database.Database) {
 
   // Run dynamic safe schema migrations
   applyMigrations(db);
+
+  // Seed clean essential production data (George Admin, 10 Families, Academic Year, Meetings)
+  seedCleanProductionData(db);
 }
+
+function seedCleanProductionData(db: Database.Database) {
+  try {
+    // 1. Ensure Academic Year
+    db.prepare(`
+      INSERT OR IGNORE INTO academic_years (id, name, start_date, end_date, is_active, is_archived)
+      VALUES ('ay-2026-2027', '2026–2027', '2026-09-01', '2027-08-31', 1, 0)
+    `).run();
+
+    // 2. Ensure System Settings
+    db.prepare(`
+      INSERT OR IGNORE INTO system_settings (id, church_name_ar, church_name_en, consecutive_absence_threshold, active_academic_year_id)
+      VALUES ('default', 'كنيسة الشهيد العظيم مارجرجس بسندبيس', 'The Great Martyr St. George Church – Sandbees, Egypt', 3, 'ay-2026-2027')
+    `).run();
+
+    // 3. Ensure George Admin User is ALWAYS present and active with correct password
+    db.prepare(`
+      INSERT OR REPLACE INTO users (
+        id, email, full_name, phone, role, assigned_family_id, is_active, password_hash
+      ) VALUES (
+        'usr-admin',
+        'admin@organa.eg',
+        'إدارة المنظومة (مسؤول النظام)',
+        '01202074649',
+        'admin',
+        NULL,
+        1,
+        'George-O229'
+      )
+    `).run();
+
+    // 4. Ensure 10 Families
+    const families = [
+      { id: 'fam-nursery', name: 'حضانة', type: 'children_class', time: '16:00', loc: 'مبنى الخدمات - الدور الأرضي', color: '#832729', day: 'Friday' },
+      { id: 'fam-pri1-2', name: 'أولى وتانية', type: 'children_class', time: '16:00', loc: 'مبنى الخدمات - الدور الأول', color: '#9C344A', day: 'Friday' },
+      { id: 'fam-pri3-4', name: 'تالتة ورابعة', type: 'children_class', time: '16:30', loc: 'مبنى الخدمات - قاعة القديس أبانوب', color: '#702C3B', day: 'Friday' },
+      { id: 'fam-pri5-6', name: 'خامسة وسادسة', type: 'children_class', time: '16:30', loc: 'مبنى الخدمات - قاعة الأنبا كاراس', color: '#5B1E2D', day: 'Friday' },
+      { id: 'fam-prep-boys', name: 'إعدادي بنين', type: 'children_class', time: '17:00', loc: 'الكنيسة الرئيسية - قاعة الشهيد مارجرجس', color: '#421923', day: 'Friday' },
+      { id: 'fam-prep-girls', name: 'إعدادي بنات', type: 'children_class', time: '17:00', loc: 'مبنى الخدمات - قاعة القديسة دميانة', color: '#A34358', day: 'Friday' },
+      { id: 'fam-sec', name: 'ثانوي', type: 'children_class', time: '18:30', loc: 'مبنى الخدمات - مسرح الكنيسة', color: '#4C1D27', day: 'Friday' },
+      { id: 'fam-servant-prep', name: 'إعداد خدام', type: 'servants_group', time: '19:00', loc: 'قاعة البابا كيرلس السادس', color: '#B35368', day: 'Sunday' },
+      { id: 'fam-servants', name: 'خدام', type: 'servants_group', time: '20:30', loc: 'الكنيسة الكبرى', color: '#702C3B', day: 'Sunday' },
+      { id: 'fam-couples', name: 'أسر', type: 'family_group', time: '19:30', loc: 'قاعة الاجتماعات الرئيسية', color: '#3A141D', day: 'Tuesday' },
+    ];
+
+    const insertFam = db.prepare(`
+      INSERT OR IGNORE INTO families (id, name, type, academic_year_id, meeting_day, meeting_time, location, color_code)
+      VALUES (?, ?, ?, 'ay-2026-2027', ?, ?, ?, ?)
+    `);
+    for (const f of families) {
+      insertFam.run(f.id, f.name, f.type, f.day, f.time, f.loc, f.color);
+    }
+
+    // 5. Ensure Meetings exist if empty
+    const meetingCount = db.prepare('SELECT count(*) as c FROM meetings').get() as { c: number };
+    if (!meetingCount || meetingCount.c === 0) {
+      seedMeetings(db);
+    }
+  } catch (err) {
+    console.error('Error seeding essential church data:', err);
+  }
+}
+
+function seedMeetings(db: Database.Database) {
+  try {
+    const families = db.prepare('SELECT id, name, meeting_time FROM families').all() as any[];
+    const startDate = new Date('2026-09-01');
+    const endDate = new Date('2027-08-31');
+
+    const d = new Date(startDate);
+    while (d.getDay() !== 5) {
+      d.setDate(d.getDate() + 1);
+    }
+
+    const insertMeeting = db.prepare(`
+      INSERT OR IGNORE INTO meetings (id, family_id, academic_year_id, title, date, start_time, end_time, lesson_title, lesson_topic, status)
+      VALUES (?, ?, 'ay-2026-2027', ?, ?, ?, '19:00', 'لقاء الجمعة', 'عام', 'scheduled')
+    `);
+
+    const runAll = db.transaction(() => {
+      while (d <= endDate) {
+        const dateStr = d.toISOString().split('T')[0];
+        for (const fam of families) {
+          const id = `mtg-${fam.id}-${dateStr}`;
+          const title = `لقاء الجمعة (${fam.name})`;
+          insertMeeting.run(id, fam.id, title, dateStr, fam.meeting_time || '17:00');
+        }
+        d.setDate(d.getDate() + 7);
+      }
+    });
+    runAll();
+  } catch (err) {
+    console.error('Error seeding meetings:', err);
+  }
+}
+
 
 function applyMigrations(db: Database.Database) {
   const addCol = (table: string, col: string, def: string) => {
