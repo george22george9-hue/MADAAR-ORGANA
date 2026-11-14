@@ -8,12 +8,28 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
-const DB_DIR = path.join(process.cwd(), 'data');
-const DB_PATH = path.join(DB_DIR, 'organa.db');
+const isVercel = Boolean(process.env.VERCEL);
+let DB_PATH: string;
 
-// Ensure data directory exists
-if (!fs.existsSync(DB_DIR)) {
-  fs.mkdirSync(DB_DIR, { recursive: true });
+if (isVercel) {
+  const tmpPath = path.join('/tmp', 'organa.db');
+  if (!fs.existsSync(tmpPath)) {
+    const sourcePath = path.join(process.cwd(), 'data', 'organa.db');
+    if (fs.existsSync(sourcePath)) {
+      try {
+        fs.copyFileSync(sourcePath, tmpPath);
+      } catch (err) {
+        console.error('Error copying DB to /tmp:', err);
+      }
+    }
+  }
+  DB_PATH = tmpPath;
+} else {
+  const DB_DIR = path.join(process.cwd(), 'data');
+  if (!fs.existsSync(DB_DIR)) {
+    fs.mkdirSync(DB_DIR, { recursive: true });
+  }
+  DB_PATH = path.join(DB_DIR, 'organa.db');
 }
 
 // Global singleton for better-sqlite3 across HMR in Next.js development

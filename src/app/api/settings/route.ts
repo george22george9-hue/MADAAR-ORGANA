@@ -3,6 +3,8 @@ import { getSystemSettings, updateSystemSettings } from '@/lib/services/organa-s
 import { INITIAL_PERSONAS } from '@/lib/constants/personas';
 import { UserRole } from '@/types/organa';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const settings = getSystemSettings();
