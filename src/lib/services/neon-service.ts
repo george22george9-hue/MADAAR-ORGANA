@@ -7,7 +7,7 @@
 
 import { getPgPool, queryPg, queryOnePg } from '@/lib/db/neon';
 import { hashPassword, verifyPassword } from '@/lib/auth/password';
-import { sendPushToUserPg } from '@/lib/services/push-service';
+import { sendPushToUserPg, sendPushToAdminsPg } from '@/lib/services/push-service';
 import {
   ChurchUser,
   UserRole,
@@ -251,7 +251,37 @@ export async function createJoinRequestPg(data: {
     data.birthDate || null,
     data.notes?.trim() || null,
   ]);
-  return (await getJoinRequestByIdPg(id))!;
+
+  const savedReq = await getJoinRequestByIdPg(id);
+
+  // Send in-app notification and lock-screen push notification to administrators and priests
+  const roleNameMap: Record<string, string> = {
+    admin: 'إدارة',
+    priest: 'كاهن',
+    service_secretary: 'أمين خدمة',
+    family_leader: 'أمين أسرة',
+    servant: 'خادم',
+  };
+  const roleTitle = roleNameMap[data.requestedRole] || 'خادم';
+  const notifMsg = `وصل طلب انضمام جديد من (${data.fullName.trim()}) بصفة [${roleTitle}] بانتظار مراجعة واعتماد الإدارة.`;
+
+  createNotificationPg({
+    target_type: 'all',
+    sender_name: 'بوابة الانضمام للخدمة',
+    sender_role: 'admin',
+    title: 'طلب انضمام جديد للخدمة 📋',
+    message: notifMsg,
+    type: 'general',
+  }).catch(console.error);
+
+  sendPushToAdminsPg({
+    title: '📋 طلب انضمام جديد — مارجرجس سندبيس',
+    body: notifMsg,
+    url: '/users?tab=requests',
+    tag: 'new-join-request',
+  }).catch(console.error);
+
+  return savedReq!;
 }
 
 export async function approveJoinRequestPg(

@@ -123,6 +123,29 @@ export async function sendPushToAllPg(payload: PushPayload): Promise<number> {
 }
 
 /**
+ * Send a push notification specifically to Church Administrators, Priests, and Service Secretaries
+ */
+export async function sendPushToAdminsPg(payload: PushPayload): Promise<number> {
+  if (!isConfigured()) return 0;
+
+  const rows = await queryPg<{
+    id: string;
+    endpoint: string;
+    p256dh: string;
+    auth: string;
+  }>(`
+    SELECT ps.id, ps.endpoint, ps.p256dh, ps.auth
+    FROM push_subscriptions ps
+    JOIN users u ON ps.user_id = u.id
+    WHERE u.role IN ('admin', 'priest', 'service_secretary')
+  `);
+
+  if (rows.length === 0) return 0;
+
+  return sendPushToSubscribers(rows, payload);
+}
+
+/**
  * Internal delivery helper that pushes payload to devices and removes dead subscriptions
  */
 async function sendPushToSubscribers(
