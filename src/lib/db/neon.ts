@@ -11,15 +11,11 @@ declare global {
   var __organa_pg_pool: Pool | undefined;
 }
 
-const DEFAULT_NEON_URL =
-  'postgresql://neondb_owner:npg_pWxtPoXTG5r6@ep-hidden-firefly-bb59lmp7-pooler.c-15.us-east-1.aws.neon.tech/neondb?sslmode=require';
-
 export function getPgPool(): Pool | null {
   const connectionString =
     process.env.DATABASE_URL ||
     process.env.POSTGRES_URL ||
-    process.env.POSTGRES_PRISMA_URL ||
-    DEFAULT_NEON_URL;
+    process.env.POSTGRES_PRISMA_URL;
 
   if (!connectionString) {
     return null;
