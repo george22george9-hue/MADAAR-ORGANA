@@ -19,7 +19,8 @@ import {
   CheckCheck,
   Clock,
   ExternalLink,
-  ChevronLeft
+  ChevronLeft,
+  Trash2
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -111,6 +112,19 @@ export function Topbar({ onToggleMobileNav }: TopbarProps) {
       );
       setUnreadNotifsCount(prev => Math.max(0, prev - 1));
       // Trigger update on floating banner
+      window.dispatchEvent(new CustomEvent('organa:refresh_notifications'));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteNotification = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('هل تريد حذف هذا الإشعار نهائياً من المنظومة؟')) return;
+    try {
+      await fetch(`/api/notifications?id=${id}`, { method: 'DELETE' });
+      setNotifications(prev => prev.filter(n => n.id !== id));
+      setUnreadNotifsCount(prev => Math.max(0, prev - 1));
       window.dispatchEvent(new CustomEvent('organa:refresh_notifications'));
     } catch (err) {
       console.error(err);
@@ -276,16 +290,29 @@ export function Topbar({ onToggleMobileNav }: TopbarProps) {
                               </div>
                             </div>
 
-                            {/* Mark read button */}
-                            {isUnread && (
-                              <button
-                                onClick={(e) => handleMarkAsRead(n.id, e)}
-                                className="p-1 rounded-md text-emerald-600 hover:bg-emerald-50 transition-colors shrink-0"
-                                title="تحديد كمقروء"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                            <div className="flex items-center gap-1 shrink-0">
+                              {/* Mark read button */}
+                              {isUnread && (
+                                <button
+                                  onClick={(e) => handleMarkAsRead(n.id, e)}
+                                  className="p-1 rounded-md text-emerald-600 hover:bg-emerald-50 transition-colors"
+                                  title="تحديد كمقروء"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {/* Admin Delete button */}
+                              {currentRole === 'admin' && (
+                                <button
+                                  onClick={(e) => handleDeleteNotification(n.id, e)}
+                                  className="p-1 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors"
+                                  title="حذف الرسالة نهائياً من المنظومة"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );

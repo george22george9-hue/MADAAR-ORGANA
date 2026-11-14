@@ -1259,6 +1259,11 @@ export async function markNotificationAsReadPg(id: string): Promise<boolean> {
   return true;
 }
 
+export async function deleteNotificationPg(id: string): Promise<boolean> {
+  await queryPg(`DELETE FROM notifications WHERE id = $1`, [id]);
+  return true;
+}
+
 export async function sendTuesdayNotebookReminderPg(senderName: string = 'إدارة الأبلكيشن'): Promise<ChurchNotification> {
   return createNotificationPg({
     target_type: 'all',

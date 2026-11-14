@@ -10,6 +10,7 @@ import {
   getNotificationsPg,
   createNotificationPg,
   markNotificationAsReadPg,
+  deleteNotificationPg,
   sendTuesdayNotebookReminderPg,
 } from '@/lib/services/neon-service';
 import { sendPushToAllPg } from '@/lib/services/push-service';
@@ -48,6 +49,16 @@ export async function POST(request: NextRequest) {
         await markNotificationAsReadPg(id);
       }
       return NextResponse.json({ success: true });
+    }
+
+    // 1.1 Delete notification
+    if (action === 'delete') {
+      const { id } = body;
+      if (!id) return NextResponse.json({ success: false, error: 'معرف الإشعار مطلوب' }, { status: 400 });
+      if (isNeonConfigured()) {
+        await deleteNotificationPg(id);
+      }
+      return NextResponse.json({ success: true, message: 'تم حذف الرسالة بنجاح' });
     }
 
     // 2. Trigger Tuesday Notebook Preparation Reminder
@@ -100,6 +111,20 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    if (!id) return NextResponse.json({ success: false, error: 'معرف الإشعار مطلوب' }, { status: 400 });
+    if (isNeonConfigured()) {
+      await deleteNotificationPg(id);
+    }
+    return NextResponse.json({ success: true, message: 'تم حذف الرسالة بنجاح' });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
