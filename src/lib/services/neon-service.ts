@@ -16,6 +16,7 @@ import {
   ServedMember,
   JoinRequest,
   Meeting,
+  AbsenceAlert,
 } from '@/types/organa';
 
 export function isNeonConfigured(): boolean {
@@ -1009,7 +1010,44 @@ export async function bulkSaveServantAttendancePg(
 }
 
 // --------------------------------------------------------------------
-// 8. High-Performance Dashboard Aggregations
+// 8. Absence Alerts & Pastoral Care
+// --------------------------------------------------------------------
+export async function getAbsenceAlertsPg(filters?: {
+  familyId?: string;
+  status?: string;
+}): Promise<AbsenceAlert[]> {
+  let sql = `
+    SELECT aa.*, sm.full_name as member_name, f.name as family_name, s.full_name as assigned_servant_name
+    FROM absence_alerts aa
+    JOIN served_members sm ON aa.member_id = sm.id
+    JOIN families f ON aa.family_id = f.id
+    LEFT JOIN servants s ON aa.assigned_servant_id = s.id
+    WHERE 1=1
+  `;
+  const params: any[] = [];
+  if (filters?.familyId) {
+    params.push(filters.familyId);
+    sql += ` AND aa.family_id = $${params.length}`;
+  }
+  if (filters?.status) {
+    params.push(filters.status);
+    sql += ` AND aa.status = $${params.length}`;
+  }
+  sql += ` ORDER BY aa.consecutive_absences_count DESC, aa.created_at DESC`;
+  const rows = await queryPg(sql, params);
+  return rows.map(r => ({
+    ...r,
+    last_attendance_date: r.last_attendance_date instanceof Date ? r.last_attendance_date.toISOString().split('T')[0] : (r.last_attendance_date ? String(r.last_attendance_date).split('T')[0] : 'غير محدد'),
+  }));
+}
+
+export async function updateAbsenceAlertStatusPg(alertId: string, status: string): Promise<boolean> {
+  await queryPg(`UPDATE absence_alerts SET status = $1 WHERE id = $2`, [status, alertId]);
+  return true;
+}
+
+// --------------------------------------------------------------------
+// 9. High-Performance Dashboard Aggregations
 // --------------------------------------------------------------------
 export async function getDashboardDataPg() {
   const [fCount, sCount, mCount, mtgCount] = await Promise.all([

@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAbsenceAlerts, updateAbsenceAlertStatus } from '@/lib/services/organa-service';
+import { isNeonConfigured, getAbsenceAlertsPg, updateAbsenceAlertStatusPg } from '@/lib/services/neon-service';
 import { INITIAL_PERSONAS } from '@/lib/constants/personas';
 import { UserRole } from '@/types/organa';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,6 +15,12 @@ export async function GET(request: NextRequest) {
     let userFamilyId = searchParams.get('userFamilyId') || searchParams.get('familyId') || undefined;
     if ((role === 'servant' || role === 'family_leader') && !userFamilyId) {
       userFamilyId = INITIAL_PERSONAS[role]?.assigned_family_id || undefined;
+    }
+
+    if (isNeonConfigured()) {
+      const targetFamily = (role === 'servant' || role === 'family_leader') ? userFamilyId : familyId;
+      const alerts = await getAbsenceAlertsPg({ familyId: targetFamily, status });
+      return NextResponse.json({ success: true, alerts });
     }
 
     const alerts = getAbsenceAlerts({ familyId, status, userRole: role, userFamilyId });
@@ -27,6 +36,11 @@ export async function PUT(request: NextRequest) {
     const { alertId, status } = body;
     const actorRole = (body.actorRole as UserRole) || 'family_leader';
     const actor = INITIAL_PERSONAS[actorRole];
+
+    if (isNeonConfigured()) {
+      await updateAbsenceAlertStatusPg(alertId, status);
+      return NextResponse.json({ success: true });
+    }
 
     updateAbsenceAlertStatus(alertId, status, actor);
     return NextResponse.json({ success: true });
