@@ -12,6 +12,7 @@ import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { MobileNav } from './MobileNav';
 import { NotificationBanner } from '@/components/notifications/NotificationBanner';
+import { PushSubscriptionPrompt } from '@/components/notifications/PushSubscriptionPrompt';
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -59,6 +60,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Mobile Navigation Drawer & Fixed Bottom Bar */}
         <MobileNav isOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
+
+        {/* Lock-Screen Web Push Prompt */}
+        <PushSubscriptionPrompt />
       </div>
     </div>
   );

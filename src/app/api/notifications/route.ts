@@ -12,6 +12,7 @@ import {
   markNotificationAsReadPg,
   sendTuesdayNotebookReminderPg,
 } from '@/lib/services/neon-service';
+import { sendPushToAllPg } from '@/lib/services/push-service';
 import { UserRole } from '@/types/organa';
 
 export const dynamic = 'force-dynamic';
@@ -54,6 +55,13 @@ export async function POST(request: NextRequest) {
       const senderName = body.senderName || 'إدارة الخدمة';
       if (isNeonConfigured()) {
         const notif = await sendTuesdayNotebookReminderPg(senderName);
+        // Deliver lock-screen push notification to all servants
+        sendPushToAllPg({
+          title: '📓 كشكول الخدمة — مارجرجس سندبيس',
+          body: notif.message,
+          url: '/notebooks',
+          tag: 'tuesday-prep',
+        }).catch(console.error);
         return NextResponse.json({ success: true, notification: notif });
       }
       return NextResponse.json({ success: true });
@@ -69,15 +77,25 @@ export async function POST(request: NextRequest) {
     }
 
     if (isNeonConfigured()) {
+      const title = senderRole === 'priest' ? '✝️ رسالة من قدس أبونا' : '📢 تنبيه من إدارة الخدمة';
       const notif = await createNotificationPg({
         target_type: 'all',
         sender_id: body.senderId || null,
         sender_name: senderName,
         sender_role: senderRole,
-        title: senderRole === 'priest' ? 'رسالة من قدس أبونا' : 'تنبيه من إدارة الخدمة',
+        title: title,
         message: message,
         type: senderRole === 'priest' ? 'priest_broadcast' : 'general',
       });
+
+      // Deliver lock-screen push notification to all servants
+      sendPushToAllPg({
+        title: `${title} — مارجرجس سندبيس`,
+        body: message,
+        url: '/alerts',
+        tag: 'church-broadcast',
+      }).catch(console.error);
+
       return NextResponse.json({ success: true, notification: notif });
     }
 

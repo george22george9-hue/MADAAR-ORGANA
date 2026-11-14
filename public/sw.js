@@ -1,9 +1,10 @@
 // ====================================================================
-// ORGANA — Service Worker for Progressive Web App (PWA)
+// ORGANA — Service Worker for Progressive Web App & Push Notifications
 // The Great Martyr St. George Church – Sandbees, Egypt
+// Developed by MADAAR Technologies
 // ====================================================================
 
-const CACHE_NAME = 'organa-cache-v1';
+const CACHE_NAME = 'organa-cache-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -77,5 +78,61 @@ self.addEventListener('fetch', (event) => {
         }
         return new Response('Network offline', { status: 503, statusText: 'Offline' });
       })
+  );
+});
+
+// ====================================================================
+// Web Push Notifications — Wakes up phone even when app is closed!
+// ====================================================================
+
+self.addEventListener('push', (event) => {
+  let data = {};
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (e) {
+      data = {
+        title: 'كنيسة مارجرجس بسندبيس',
+        body: event.data.text() || 'لديك رسالة جديدة في المنظومة.',
+      };
+    }
+  }
+
+  const title = data.title || 'كنيسة الشهيد العظيم مارجرجس بسندبيس';
+  const options = {
+    body: data.body || 'لديك إشعار جديد في منظومة الخدمة.',
+    icon: '/icons/icon-192x192.png',
+    badge: '/icons/icon-192x192.png',
+    tag: data.tag || 'organa-push',
+    renotify: true,
+    vibrate: [200, 100, 200, 100, 200],
+    data: {
+      url: data.url || '/dashboard',
+    },
+    dir: 'rtl',
+    lang: 'ar',
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const urlToOpen = event.notification.data?.url || '/dashboard';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // If a window is already open, focus it and navigate
+      for (let client of windowClients) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          client.navigate(urlToOpen);
+          return client.focus();
+        }
+      }
+      // Otherwise open a new window
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen);
+      }
+    })
   );
 });

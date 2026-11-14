@@ -7,6 +7,7 @@
 
 import { getPgPool, queryPg, queryOnePg } from '@/lib/db/neon';
 import { hashPassword, verifyPassword } from '@/lib/auth/password';
+import { sendPushToUserPg } from '@/lib/services/push-service';
 import {
   ChurchUser,
   UserRole,
@@ -1132,15 +1133,30 @@ export async function sendServantAbsenceNotificationPg(servantId: string): Promi
   const servant = await queryOnePg(`SELECT * FROM servants WHERE id = $1`, [servantId]);
   if (!servant) return null;
 
-  return createNotificationPg({
+  const message = `سلام ونعمة أ/ ${servant.full_name}.. افتقدناك اليوم في خدمة مارجرجس بسندبيس، بنصلي تكون بكل خير ونفرح بوجودك الجمعة القادمة.`;
+  const targetUserId = servant.user_id || servant.id;
+
+  const notif = await createNotificationPg({
     target_type: 'user',
-    target_id: servant.user_id || servant.id,
+    target_id: targetUserId,
     sender_name: 'إدارة الخدمة',
     sender_role: 'admin',
     title: 'افتقدناك اليوم في الخدمة',
-    message: `سلام ونعمة أ/ ${servant.full_name}.. افتقدناك اليوم في خدمة مارجرجس بسندبيس، بنصلي تكون بكل خير ونفرح بوجودك الجمعة القادمة.`,
+    message: message,
     type: 'servant_absence',
   });
+
+  // Push to servant's phone screen even if closed
+  if (targetUserId) {
+    sendPushToUserPg(targetUserId, {
+      title: '💌 افتقدناك اليوم — مارجرجس سندبيس',
+      body: message,
+      url: '/my-attendance',
+      tag: 'servant-absence',
+    }).catch(console.error);
+  }
+
+  return notif;
 }
 
 // --------------------------------------------------------------------
