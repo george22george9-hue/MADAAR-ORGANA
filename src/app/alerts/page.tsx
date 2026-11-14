@@ -232,19 +232,22 @@ export default function AlertsPage() {
             كافة الأسر ({alerts.length})
           </button>
 
-          {families.slice(0, 2).map(f => (
-            <button
-              key={f.id}
-              onClick={() => setFamilyFilter(f.id)}
-              className={`px-3.5 py-1.5 rounded-full font-bold whitespace-nowrap transition-all shadow-2xs ${
-                familyFilter === f.id
-                  ? 'bg-[#5A1E2D] text-white'
-                  : 'bg-white border border-[#EAE3E4] text-[#282326] hover:bg-[#FAF5F6]'
-              }`}
-            >
-              {f.name} (1)
-            </button>
-          ))}
+          {families.map(f => {
+            const fCount = alerts.filter(a => a.family_id === f.id).length;
+            return (
+              <button
+                key={f.id}
+                onClick={() => setFamilyFilter(f.id)}
+                className={`px-3.5 py-1.5 rounded-full font-bold whitespace-nowrap transition-all shadow-2xs ${
+                  familyFilter === f.id
+                    ? 'bg-[#5A1E2D] text-white'
+                    : 'bg-white border border-[#EAE3E4] text-[#282326] hover:bg-[#FAF5F6]'
+                }`}
+              >
+                {f.name} ({fCount})
+              </button>
+            );
+          })}
 
           <button
             onClick={() => setStatusFilter('pending_followup')}
@@ -255,7 +258,7 @@ export default function AlertsPage() {
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-[#B91C1C]"></span>
-            <span>بانتظار الافتقاد</span>
+            <span>بانتظار الافتقاد ({alerts.filter(a => a.status === 'pending_followup').length})</span>
           </button>
         </div>
 
@@ -269,93 +272,92 @@ export default function AlertsPage() {
         </div>
 
         {/* Alert Cards with Thick Red Right-Border */}
-        <div className="space-y-3">
-          {filteredAlerts.map((alt) => (
-            <div
-              key={alt.id}
-              className="bg-white rounded-2xl border border-[#EAE3E4] border-r-4 border-r-[#B91C1C] p-4 shadow-2xs space-y-3"
-            >
-              {/* Member Title Row */}
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-[#FCE7F3] text-[#9D174D] font-bold text-xs flex items-center justify-center shrink-0">
-                    {alt.member_name.substring(0, 2)}
+        {filteredAlerts.length === 0 ? (
+          <div className="p-8 text-center bg-white rounded-3xl border border-[#EAE3E4] shadow-2xs">
+            <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto mb-2 opacity-80" />
+            <h3 className="font-bold text-sm text-[#282326]">لا توجد حالات غياب متكرر حالياً</h3>
+            <p className="text-xs text-[#81777A] mt-1 max-w-sm mx-auto">
+              كافة المخدومين منتظمون في الحضور، أو لم يتم تسجيل غياب متكرر (أكثر من 3 مرات) حتى الآن.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredAlerts.map((alt) => (
+              <div
+                key={alt.id}
+                className="bg-white rounded-2xl border border-[#EAE3E4] border-r-4 border-r-[#B91C1C] p-4 shadow-2xs space-y-3"
+              >
+                {/* Member Title Row */}
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-[#FCE7F3] text-[#9D174D] font-bold text-xs flex items-center justify-center shrink-0">
+                      {alt.member_name.substring(0, 2)}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-base text-[#282326]">{alt.member_name}</h3>
+                      </div>
+                      <div className="text-xs text-[#81777A] mt-0.5">
+                        أسرة {alt.family_name}
+                      </div>
+                    </div>
+                  </div>
+
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#FEE2E2] text-[#991B1B] flex items-center gap-1 shrink-0">
+                    <span>❌</span>
+                    <span>غياب {alt.consecutive_absences_count} أسابيع متتالية</span>
+                  </span>
+                </div>
+
+                {/* Servant and Date Info */}
+                <div className="bg-[#FAF5F6] p-2.5 rounded-xl border border-[#EAE3E4] grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-[10px] text-[#81777A] block">الخادم المكلف بالمتابعة:</span>
+                    <div className="font-bold text-[#282326] flex items-center gap-1 mt-0.5">
+                      <User className="w-3 h-3 text-[#702C3B]" />
+                      <span>{alt.assigned_servant_name || 'خادم الافتقاد'}</span>
+                    </div>
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-base text-[#282326]">{alt.member_name}</h3>
-                      <span className="px-2 py-0.5 rounded-lg bg-gray-100 text-gray-700 text-[10px] font-mono font-bold">
-                        EB-108
-                      </span>
-                    </div>
-                    <div className="text-xs text-[#81777A] mt-0.5">
-                      أسرة {alt.family_name} • القديس أبانوب
+                    <span className="text-[10px] text-[#81777A] block">تاريخ آخر حضور مسجل:</span>
+                    <div className="font-bold text-[#282326] flex items-center gap-1 mt-0.5">
+                      <Calendar className="w-3 h-3 text-[#702C3B]" />
+                      <span>{alt.last_attendance_date || 'غير محدد'}</span>
                     </div>
                   </div>
                 </div>
 
-                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#FEE2E2] text-[#991B1B] flex items-center gap-1 shrink-0">
-                  <span>❌</span>
-                  <span>غياب {alt.consecutive_absences_count} أسابيع متتالية</span>
-                </span>
-              </div>
-
-              {/* Servant and Date Info */}
-              <div className="bg-[#FAF5F6] p-2.5 rounded-xl border border-[#EAE3E4] grid grid-cols-2 gap-2 text-xs">
-                <div>
-                  <span className="text-[10px] text-[#81777A] block">الخادم المكلف بالمتابعة:</span>
-                  <div className="font-bold text-[#282326] flex items-center gap-1 mt-0.5">
-                    <User className="w-3 h-3 text-[#702C3B]" />
-                    <span>{alt.assigned_servant_name || 'خادم الافتقاد'}</span>
-                  </div>
+                {/* Required Pastoral Action Box */}
+                <div className="p-2.5 rounded-xl bg-white border border-[#EAE3E4] text-xs">
+                  <span className="font-bold text-[#282326] block mb-0.5">الإجراء الرعوي المطلوب:</span>
+                  <p className="text-[11px] text-[#81777A] leading-relaxed">
+                    {alt.suggested_action || 'الاتصال الفوري بولي الأمر أو إجراء زيارة منزلية ميدانية لمعرفة سبب الانقطاع والمتابعة الروحية.'}
+                  </p>
                 </div>
-                <div>
-                  <span className="text-[10px] text-[#81777A] block">تاريخ آخر حضور مسجل:</span>
-                  <div className="font-bold text-[#282326] flex items-center gap-1 mt-0.5">
-                    <Calendar className="w-3 h-3 text-[#702C3B]" />
-                    <span>{alt.last_attendance_date || '2026-10-23'}</span>
-                  </div>
+
+                {/* Status Row */}
+                <div className="flex items-center justify-between text-xs pt-1">
+                  <span className="text-[#81777A]">حالة الافتقاد:</span>
+                  <span className="font-bold text-[#B91C1C] flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#B91C1C]"></span>
+                    <span>بانتظار الافتقاد</span>
+                  </span>
+                </div>
+
+                {/* Two Action Buttons: Call Guardian | Record Result */}
+                <div className="grid grid-cols-2 gap-2 pt-1 border-t border-gray-100">
+                  <button
+                    onClick={() => setSelectedAlert(alt)}
+                    className="py-2 px-3 rounded-xl col-span-2 bg-[#5A1E2D] hover:bg-[#421923] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>تسجيل نتيجة الافتقاد</span>
+                  </button>
                 </div>
               </div>
-
-              {/* Required Pastoral Action Box */}
-              <div className="p-2.5 rounded-xl bg-white border border-[#EAE3E4] text-xs">
-                <span className="font-bold text-[#282326] block mb-0.5">الإجراء الرعوي المطلوب:</span>
-                <p className="text-[11px] text-[#81777A] leading-relaxed">
-                  {alt.suggested_action || 'الاتصال الفوري بولي الأمر أو إجراء زيارة منزلية ميدانية لمعرفة سبب الانقطاع والمتابعة الروحية.'}
-                </p>
-              </div>
-
-              {/* Status Row */}
-              <div className="flex items-center justify-between text-xs pt-1">
-                <span className="text-[#81777A]">حالة الافتقاد:</span>
-                <span className="font-bold text-[#B91C1C] flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#B91C1C]"></span>
-                  <span>بانتظار الافتقاد</span>
-                </span>
-              </div>
-
-              {/* Two Action Buttons: Call Guardian | Record Result */}
-              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-gray-100">
-                <a
-                  href="tel:01234567890"
-                  className="py-2 px-3 rounded-xl border border-[#EAE3E4] bg-white hover:bg-[#FAF5F6] text-xs font-bold text-[#282326] flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  <Phone className="w-3.5 h-3.5 text-[#166534]" />
-                  <span>اتصال بولي الأمر</span>
-                </a>
-
-                <button
-                  onClick={() => setSelectedAlert(alt)}
-                  className="py-2 px-3 rounded-xl bg-[#5A1E2D] hover:bg-[#421923] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>تسجيل نتيجة الافتقاد</span>
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
 
         {/* Section: المتابعة الروحية وسجل القداسات */}
         <div className="bg-white rounded-3xl border border-[#EAE3E4] p-4 shadow-2xs space-y-3 pt-4">
@@ -373,7 +375,7 @@ export default function AlertsPage() {
               href="/spiritual"
               className="text-xs font-bold text-[#702C3B] hover:underline"
             >
-              عرض السجل
+              عرض السجل الكامل ←
             </Link>
           </div>
 
@@ -386,72 +388,24 @@ export default function AlertsPage() {
             </div>
           </div>
 
-          {/* Sample Member Rows (matching image 3) */}
-          <div className="space-y-2">
-            {/* Row 1: أنطونيوس سامح نجيب */}
-            <div className="p-2.5 rounded-xl border border-gray-100 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-[#DCFCE7] text-[#166534] font-bold text-xs flex items-center justify-center">
-                  أن
-                </div>
-                <div>
-                  <h4 className="font-bold text-xs text-[#282326]">أنطونيوس سامح نجيب</h4>
-                  <div className="text-[10px] text-[#81777A]">EB-103 • إعدادي بنين</div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#DCFCE7] text-[#166534]">
-                  القداس ✓
-                </span>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#DCFCE7] text-[#166534]">
-                  التناول ✓
-                </span>
-              </div>
-            </div>
-
-            {/* Row 2: بيشوي مجدي زكي */}
-            <div className="p-2.5 rounded-xl border border-gray-100 flex items-center justify-between bg-[#FFF1F2]/30">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-[#FEE2E2] text-[#991B1B] font-bold text-xs flex items-center justify-center">
-                  بي
-                </div>
-                <div>
-                  <h4 className="font-bold text-xs text-[#282326]">بيشوي مجدي زكي</h4>
-                  <div className="text-[10px] text-[#991B1B] font-bold">غير متواجد (غياب)</div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#FEE2E2] text-[#991B1B]">
-                  القداس ❌
-                </span>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#FEE2E2] text-[#991B1B]">
-                  التناول ❌
-                </span>
-              </div>
-            </div>
-
-            {/* Row 3: توماس أسامة فوزي */}
-            <div className="p-2.5 rounded-xl border border-gray-100 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-[#DCFCE7] text-[#166534] font-bold text-xs flex items-center justify-center">
-                  تو
-                </div>
-                <div>
-                  <h4 className="font-bold text-xs text-[#282326]">توماس أسامة فوزي</h4>
-                  <div className="text-[10px] text-[#81777A]">EB-109 • إعدادي بنين</div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#DCFCE7] text-[#166534]">
-                  القداس ✓
-                </span>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#DCFCE7] text-[#166534]">
-                  التناول ✓
-                </span>
-              </div>
+          {/* Clean Real Info Banner */}
+          <div className="p-5 text-center rounded-2xl border border-dashed border-[#EAE3E4] bg-[#FAF5F6]">
+            <p className="text-xs text-[#81777A]">
+              يتم رصد المتابعة الروحية وحضور القداسات تلقائياً من خلال دفاتر الحضور الأسبوعية.
+            </p>
+            <div className="mt-3 flex items-center justify-center gap-2">
+              <Link
+                href="/attendance"
+                className="px-3.5 py-1.5 rounded-xl bg-[#702C3B] text-white text-xs font-bold hover:bg-[#5A232F] transition-colors"
+              >
+                تسجيل حضور اليوم
+              </Link>
+              <Link
+                href="/spiritual"
+                className="px-3.5 py-1.5 rounded-xl border border-[#EAE3E4] bg-white text-xs font-bold text-[#282326] hover:bg-gray-50 transition-colors"
+              >
+                سجل المتابعة الروحية
+              </Link>
             </div>
           </div>
         </div>
@@ -464,10 +418,10 @@ export default function AlertsPage() {
             </div>
             <div>
               <div className="font-bold text-xs md:text-sm text-[#282326]">
-                تسجيل حضور الفصول اليومي
+                تسجيل حضور الفصول واللقاءات
               </div>
               <div className="text-[10px] text-[#81777A]">
-                تم اعتماد 14 كشكول من أصل 18
+                تسجيل حضور مخدومي وخدام أسر كنيسة مارجرجس بسندبيس
               </div>
             </div>
           </div>
