@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServedMembers, createServedMember, updateServedMember, getMemberHistory } from '@/lib/services/organa-service';
+import { getServedMembers, createServedMember, updateServedMember, getMemberHistory, deleteServedMember } from '@/lib/services/organa-service';
+import {
+  isNeonConfigured,
+  getServedMembersPg,
+  createServedMemberPg,
+  updateServedMemberPg,
+  deleteServedMemberPg,
+} from '@/lib/services/neon-service';
 import { INITIAL_PERSONAS } from '@/lib/constants/personas';
 import { UserRole } from '@/types/organa';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,12 +23,17 @@ export async function GET(request: NextRequest) {
     if ((role === 'servant' || role === 'family_leader') && !userFamilyId) {
       userFamilyId = INITIAL_PERSONAS[role]?.assigned_family_id || undefined;
     }
-    const userServantId = searchParams.get('userServantId') || undefined;
     const memberHistoryId = searchParams.get('historyFor');
 
     if (memberHistoryId) {
       const history = getMemberHistory(memberHistoryId);
       return NextResponse.json({ success: true, history });
+    }
+
+    if (isNeonConfigured()) {
+      const targetFamily = (role === 'servant' || role === 'family_leader') ? userFamilyId : familyId;
+      const members = await getServedMembersPg(targetFamily, search);
+      return NextResponse.json({ success: true, members });
     }
 
     const members = getServedMembers({
@@ -28,7 +42,6 @@ export async function GET(request: NextRequest) {
       search,
       userRole: role,
       userFamilyId,
-      userServantId,
     });
 
     return NextResponse.json({ success: true, members });
@@ -42,6 +55,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const actorRole = (body.actorRole as UserRole) || 'family_leader';
     const actor = INITIAL_PERSONAS[actorRole];
+
+    if (isNeonConfigured()) {
+      const member = await createServedMemberPg(body);
+      return NextResponse.json({ success: true, member });
+    }
 
     const member = createServedMember(body, actor);
     return NextResponse.json({ success: true, member });
@@ -57,6 +75,11 @@ export async function PUT(request: NextRequest) {
     const actorRole = (body.actorRole as UserRole) || 'family_leader';
     const actor = INITIAL_PERSONAS[actorRole];
 
+    if (isNeonConfigured()) {
+      const member = await updateServedMemberPg(id, data);
+      return NextResponse.json({ success: true, member });
+    }
+
     const member = updateServedMember(id, data, actor);
     return NextResponse.json({ success: true, member });
   } catch (err: any) {
@@ -64,3 +87,25 @@ export async function PUT(request: NextRequest) {
   }
 }
 
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    const actorRole = (searchParams.get('actorRole') as UserRole) || 'admin';
+
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'معرّف المخدوم مطلوب' }, { status: 400 });
+    }
+
+    if (isNeonConfigured()) {
+      await deleteServedMemberPg(id);
+      return NextResponse.json({ success: true, message: 'تم حذف المخدوم بنجاح' });
+    }
+
+    const actor = INITIAL_PERSONAS[actorRole] || INITIAL_PERSONAS.admin;
+    deleteServedMember(id, actor);
+    return NextResponse.json({ success: true, message: 'تم حذف المخدوم بنجاح' });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}

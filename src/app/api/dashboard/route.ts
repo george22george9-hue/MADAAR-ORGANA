@@ -5,6 +5,9 @@ import {
   getFamilyLeaderDashboardData,
   getServantDashboardData,
 } from '@/lib/services/organa-service';
+import { isNeonConfigured, getDashboardDataPg } from '@/lib/services/neon-service';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,6 +15,11 @@ export async function GET(request: NextRequest) {
     const role = searchParams.get('role') || 'admin';
     const familyId = searchParams.get('familyId') || undefined;
     const servantId = searchParams.get('servantId') || undefined;
+
+    if (isNeonConfigured()) {
+      const data = await getDashboardDataPg();
+      return NextResponse.json({ success: true, data });
+    }
 
     let data;
     if (role === 'admin' || role === 'priest') {
@@ -29,4 +37,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
-

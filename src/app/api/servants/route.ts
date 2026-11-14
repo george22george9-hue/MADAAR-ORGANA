@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServants, createServant, updateServant } from '@/lib/services/organa-service';
+import { getServants, createServant, updateServant, deleteServant } from '@/lib/services/organa-service';
+import {
+  isNeonConfigured,
+  getServantsPg,
+  createServantPg,
+  updateServantPg,
+  deleteServantPg,
+} from '@/lib/services/neon-service';
 import { INITIAL_PERSONAS } from '@/lib/constants/personas';
 import { UserRole } from '@/types/organa';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,6 +20,12 @@ export async function GET(request: NextRequest) {
     let userFamilyId = searchParams.get('userFamilyId') || searchParams.get('familyId') || undefined;
     if ((role === 'servant' || role === 'family_leader') && !userFamilyId) {
       userFamilyId = INITIAL_PERSONAS[role]?.assigned_family_id || undefined;
+    }
+
+    if (isNeonConfigured()) {
+      const targetFamily = (role === 'servant' || role === 'family_leader') ? userFamilyId : familyId;
+      const servants = await getServantsPg(targetFamily);
+      return NextResponse.json({ success: true, servants });
     }
 
     const servants = getServants({ familyId, userRole: role, userFamilyId });
@@ -26,6 +41,11 @@ export async function POST(request: NextRequest) {
     const actorRole = (body.actorRole as UserRole) || 'service_secretary';
     const actor = INITIAL_PERSONAS[actorRole];
 
+    if (isNeonConfigured()) {
+      const servant = await createServantPg(body);
+      return NextResponse.json({ success: true, servant });
+    }
+
     const servant = createServant(body, actor);
     return NextResponse.json({ success: true, servant });
   } catch (err: any) {
@@ -40,6 +60,11 @@ export async function PUT(request: NextRequest) {
     const actorRole = (body.actorRole as UserRole) || 'service_secretary';
     const actor = INITIAL_PERSONAS[actorRole];
 
+    if (isNeonConfigured()) {
+      const servant = await updateServantPg(id, data);
+      return NextResponse.json({ success: true, servant });
+    }
+
     const servant = updateServant(id, data, actor);
     return NextResponse.json({ success: true, servant });
   } catch (err: any) {
@@ -47,3 +72,25 @@ export async function PUT(request: NextRequest) {
   }
 }
 
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    const actorRole = (searchParams.get('actorRole') as UserRole) || 'admin';
+
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'معرّف الخادم مطلوب' }, { status: 400 });
+    }
+
+    if (isNeonConfigured()) {
+      await deleteServantPg(id);
+      return NextResponse.json({ success: true, message: 'تم حذف الخادم بنجاح' });
+    }
+
+    const actor = INITIAL_PERSONAS[actorRole] || INITIAL_PERSONAS.admin;
+    deleteServant(id, actor);
+    return NextResponse.json({ success: true, message: 'تم حذف الخادم بنجاح' });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}

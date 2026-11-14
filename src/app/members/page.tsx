@@ -26,7 +26,8 @@ import {
   ArrowRightLeft,
   AlertTriangle,
   X,
-  ChevronLeft
+  ChevronLeft,
+  Trash2
 } from 'lucide-react';
 import { exportToExcel } from '@/lib/export/excel';
 import { exportToPrintablePDF } from '@/lib/export/pdf';
@@ -261,6 +262,21 @@ export default function MembersPage() {
     );
   };
 
+  const handleDeleteMember = async (m: ServedMember) => {
+    if (!confirm(`هل أنت متأكد من حذف المخدوم (${m.full_name}) نهائياً من سجلات الكنيسة؟`)) return;
+    try {
+      const res = await fetch(`/api/members?id=${m.id}&actorRole=${currentRole}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        loadData();
+      } else {
+        alert(data.error || 'حدث خطأ أثناء الحذف');
+      }
+    } catch {
+      alert('فشل الاتصال بالسيرفر');
+    }
+  };
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -440,6 +456,15 @@ export default function MembersPage() {
                   >
                     <Edit2 className="w-3.5 h-3.5" />
                   </button>
+                  {canManageAllFamilies && (
+                    <button
+                      onClick={() => handleDeleteMember(m)}
+                      className="p-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors"
+                      title="حذف المخدوم نهائياً"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <button
                     onClick={() => openViewDrawer(m)}
                     className="px-3 py-2 rounded-xl bg-[#FAF5F6] hover:bg-[#F0E4E7] text-[#702C3B] text-xs font-bold flex items-center gap-1"

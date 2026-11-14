@@ -33,7 +33,8 @@ import {
   Building2,
   UserPlus,
   Sparkles,
-  Lock
+  Lock,
+  Trash2
 } from 'lucide-react';
 
 function UsersContent() {
@@ -152,6 +153,26 @@ function UsersContent() {
       setSubmitting(false);
     }
   };
+
+  const handleDeleteUser = async (u: ChurchUser) => {
+    if (u.id === 'usr-admin' || u.phone === '01202074649') {
+      alert('لا يمكن حذف حساب إدارة المنظومة الأساسي.');
+      return;
+    }
+    if (!confirm(`هل أنت متأكد من حذف حساب (${u.full_name}) نهائياً من المنظومة؟`)) return;
+    try {
+      const res = await fetch(`/api/users?id=${u.id}&actorRole=${currentRole}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        loadData();
+      } else {
+        alert(data.error || 'حدث خطأ أثناء الحذف');
+      }
+    } catch {
+      alert('فشل الاتصال بالسيرفر');
+    }
+  };
+
 
   // Handle Approve Request
   const handleApproveRequest = async (requestItem: JoinRequest) => {
@@ -546,7 +567,8 @@ function UsersContent() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-right text-xs">
                   <thead>
                     <tr className="border-b border-[#EAE3E4] text-[#81777A] bg-[#FAF5F6]">
@@ -582,24 +604,111 @@ function UsersContent() {
                         <td className="py-3 px-3 text-[#282326] font-mono">{u.phone}</td>
                         <td className="py-3 px-3 text-[#81777A]">{u.email}</td>
                         <td className="py-3 px-3 text-center">
-                          {u.role === 'admin' && currentRole !== 'admin' ? (
+                          {u.id === 'usr-admin' || u.phone === '01202074649' ? (
                             <span className="text-[10px] text-gray-400 font-bold px-2 py-1 rounded-lg bg-gray-50 border border-gray-200">
                               🔒 محمي
                             </span>
                           ) : (
-                            <button
-                              onClick={() => openEditModal(u)}
-                              className="p-1.5 rounded-xl border border-[#EAE3E4] text-[#81777A] hover:bg-[#FAF5F6] hover:text-[#702C3B] transition-colors"
-                              title="تعديل الحساب"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => openEditModal(u)}
+                                className="p-1.5 rounded-xl border border-[#EAE3E4] text-[#81777A] hover:bg-[#FAF5F6] hover:text-[#702C3B] transition-colors"
+                                title="تعديل الحساب"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              {currentRole === 'admin' && (
+                                <button
+                                  onClick={() => handleDeleteUser(u)}
+                                  className="p-1.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors"
+                                  title="حذف الحساب نهائياً"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           )}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Mobile Responsive Cards View */}
+              <div className="block md:hidden space-y-3">
+                {filteredUsers.map((u) => (
+                  <div key={u.id} className="p-4 rounded-2xl border border-[#EAE3E4] bg-white space-y-3 shadow-xs">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-full bg-[#FAF5F6] text-[#702C3B] font-bold text-sm flex items-center justify-center border border-[#EAE3E4]">
+                          {u.full_name.substring(0, 1)}
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-sm text-[#421923]">{u.full_name}</h4>
+                          <a href={`tel:${u.phone}`} className="text-xs text-[#81777A] font-mono hover:text-[#702C3B] flex items-center gap-1 mt-0.5">
+                            <Phone className="w-3 h-3 text-[#702C3B]" />
+                            <span>{u.phone}</span>
+                          </a>
+                        </div>
+                      </div>
+                      <div>{roleBadge(u.role)}</div>
+                    </div>
+
+                    <div className="pt-2 border-t border-[#EAE3E4] text-xs text-[#81777A] flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-[#282326]">الأسرة:</span>
+                        <span className="px-2 py-0.5 rounded-lg bg-gray-100 text-[#421923] font-bold text-[10px]">
+                          {u.role === 'admin' || u.role === 'priest' || u.role === 'service_secretary'
+                            ? 'كافة الأسر'
+                            : getFamilyName(u.assigned_family_id)}
+                        </span>
+                      </div>
+                      {u.confession_father && (
+                        <div className="text-[11px] text-[#702C3B]">
+                          أب الاعتراف: <strong className="font-semibold">{u.confession_father}</strong>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-[#EAE3E4] flex items-center justify-between">
+                      <a
+                        href={`tel:${u.phone}`}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold flex items-center gap-1.5"
+                      >
+                        <Phone className="w-3 h-3" />
+                        <span>اتصال</span>
+                      </a>
+
+                      <div className="flex items-center gap-1.5">
+                        {u.id === 'usr-admin' || u.phone === '01202074649' ? (
+                          <span className="text-[10px] text-gray-400 font-bold px-2 py-1 rounded-lg bg-gray-50 border border-gray-200">
+                            🔒 حساب الإدارة الأساسي
+                          </span>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => openEditModal(u)}
+                              className="p-1.5 rounded-xl border border-[#EAE3E4] text-[#81777A] hover:bg-[#FAF5F6] hover:text-[#702C3B]"
+                              title="تعديل"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            {currentRole === 'admin' && (
+                              <button
+                                onClick={() => handleDeleteUser(u)}
+                                className="p-1.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50"
+                                title="حذف"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

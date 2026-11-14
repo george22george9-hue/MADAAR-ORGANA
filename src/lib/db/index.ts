@@ -410,9 +410,52 @@ function initSchema(db: Database.Database) {
   // Run dynamic safe schema migrations
   applyMigrations(db);
 
+  // Purge any lingering demo/fake records
+  purgeDemoData(db);
+
   // Seed clean essential production data (George Admin, 10 Families, Academic Year, Meetings)
   seedCleanProductionData(db);
 }
+
+function purgeDemoData(db: Database.Database) {
+  try {
+    // Delete any demo mock users
+    db.prepare(`
+      DELETE FROM users 
+      WHERE id != 'usr-admin' 
+        AND (
+          id LIKE 'usr-priest-%' 
+          OR id LIKE 'usr-secretary-%' 
+          OR id LIKE 'usr-leader-%' 
+          OR id LIKE 'usr-servant-%'
+          OR phone IN ('01221234567', '01229876543', '01289876543', '01001122334', '01011112222', '01033331111', '01044442222', '01055553333', '01004567890', '01233334444', '01288884444', '01299995555', '01077771111', '01088882222', '01112345678', '01022223333', '01155556666', '01066667777', '01099990000', '01211113333', '01244445555', '01277778888')
+        )
+    `).run();
+
+    // Delete any demo servants
+    db.prepare(`
+      DELETE FROM servants 
+      WHERE id LIKE 'srv-%' 
+         OR phone IN ('01112345678', '01022223333', '01155556666', '01066667777', '01099990000', '01211113333', '01244445555', '01277778888')
+    `).run();
+
+    // Delete any demo join requests
+    db.prepare(`
+      DELETE FROM join_requests 
+      WHERE id LIKE 'req-seed-%' 
+         OR phone IN ('01098765432', '01234567890', '01122334455', '01555667788')
+    `).run();
+
+    // Unlink fake demo leaders from families
+    db.prepare(`
+      UPDATE families SET leader_id = NULL 
+      WHERE leader_id LIKE 'usr-leader-%'
+    `).run();
+  } catch (err) {
+    console.error('Error in purgeDemoData:', err);
+  }
+}
+
 
 function seedCleanProductionData(db: Database.Database) {
   try {

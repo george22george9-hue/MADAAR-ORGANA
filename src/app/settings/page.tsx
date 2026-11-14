@@ -203,10 +203,11 @@ export default function SettingsPage() {
               <label className="block font-bold text-[#282326] mb-1">اسم الكنيسة باللغة الإنجليزية:</label>
               <input
                 type="text"
+                dir="ltr"
                 disabled={!canEditSettings}
                 value={churchNameEn}
                 onChange={(e) => setChurchNameEn(e.target.value)}
-                className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B] disabled:bg-[#FAF5F6]"
+                className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B] disabled:bg-[#FAF5F6] text-left"
               />
             </div>
           </div>

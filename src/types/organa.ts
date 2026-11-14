@@ -127,8 +127,12 @@ export interface ServedMember {
   id: string;
   code: string; // e.g. "MEM-101"
   full_name: string;
+  phone?: string;
   gender: 'male' | 'female';
+  stage?: string;
   birth_date: string;
+  national_id?: string;
+  academic_year_or_job?: string;
   photo_url?: string;
   current_family_id: string;
   current_family_name?: string;
@@ -374,10 +378,16 @@ export interface JoinRequest {
   full_name: string;
   phone: string;
   email?: string;
+  password_hash?: string;
   requested_role: 'family_leader' | 'servant';
   requested_family_id: string;
   requested_family_name?: string;
   status: 'pending' | 'approved' | 'rejected';
+  confession_father?: string;
+  national_id?: string;
+  job_or_study?: string;
+  address?: string;
+  birth_date?: string;
   notes?: string;
   reviewed_by_id?: string;
   reviewed_by_name?: string;

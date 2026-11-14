@@ -248,6 +248,22 @@ export function changeUserPassword(userId: string, oldPassword: string, newPassw
   return { success: true };
 }
 
+export function deleteUser(id: string, actor: ChurchUser): boolean {
+  const user = getUserById(id);
+  if (!user) return false;
+  if (user.id === 'usr-admin' || user.phone === '01202074649') {
+    throw new Error('لا يمكن حذف حساب إدارة المنظومة الأساسي.');
+  }
+  const transaction = db.transaction(() => {
+    db.prepare('DELETE FROM servants WHERE user_id = ? OR phone = ?').run(id, user.phone);
+    db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  });
+  transaction();
+  logAuditAction(actor.id, actor.full_name, actor.role, 'DELETE_USER', 'users', id, `حذف المستخدم: ${user.full_name}`);
+  return true;
+}
+
+
 // --------------------------------------------------------------------
 // 3.1 Join Requests & Public Registration Approval
 // --------------------------------------------------------------------
@@ -745,6 +761,26 @@ export function updateServant(id: string, data: Partial<Servant> & { family_ids?
   return getServantById(id)!;
 }
 
+export function deleteServant(id: string, actor: ChurchUser): boolean {
+  const current = getServantById(id);
+  if (!current) return false;
+  const transaction = db.transaction(() => {
+    db.prepare('DELETE FROM family_servants WHERE servant_id = ?').run(id);
+    db.prepare('DELETE FROM servant_attendance WHERE servant_id = ?').run(id);
+    db.prepare('DELETE FROM followup_tasks WHERE servant_id = ?').run(id);
+    db.prepare('UPDATE served_members SET assigned_servant_id = NULL WHERE assigned_servant_id = ?').run(id);
+    db.prepare('UPDATE families SET leader_id = NULL WHERE leader_id = ?').run(id);
+    if (current.user_id && current.user_id !== 'usr-admin') {
+      db.prepare('DELETE FROM users WHERE id = ?').run(current.user_id);
+    }
+    db.prepare('DELETE FROM servants WHERE id = ?').run(id);
+  });
+  transaction();
+  logAuditAction(actor.id, actor.full_name, actor.role, 'DELETE_SERVANT', 'servants', id, `حذف الخادم: ${current.full_name}`);
+  return true;
+}
+
+
 // --------------------------------------------------------------------
 // 6. Served Members Management
 // --------------------------------------------------------------------
@@ -962,6 +998,22 @@ export function updateServedMember(id: string, data: Partial<ServedMember>, acto
   logAuditAction(actor.id, actor.full_name, actor.role, 'UPDATE_MEMBER', 'served_members', id, `تعديل بيانات المخدوم: ${current?.full_name}`, current, data);
   return getMemberById(id)!;
 }
+
+export function deleteServedMember(id: string, actor: ChurchUser): boolean {
+  const current = getMemberById(id);
+  if (!current) return false;
+  const transaction = db.transaction(() => {
+    db.prepare('DELETE FROM meeting_attendance WHERE member_id = ?').run(id);
+    db.prepare('DELETE FROM absence_alerts WHERE member_id = ?').run(id);
+    db.prepare('DELETE FROM followup_tasks WHERE member_id = ?').run(id);
+    db.prepare('DELETE FROM member_history WHERE member_id = ?').run(id);
+    db.prepare('DELETE FROM served_members WHERE id = ?').run(id);
+  });
+  transaction();
+  logAuditAction(actor.id, actor.full_name, actor.role, 'DELETE_MEMBER', 'served_members', id, `حذف المخدوم: ${current.full_name}`);
+  return true;
+}
+
 
 export function getMemberHistory(memberId: string): MemberHistoryLog[] {
   return db.prepare(`

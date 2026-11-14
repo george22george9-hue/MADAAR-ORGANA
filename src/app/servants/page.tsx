@@ -23,7 +23,8 @@ import {
   Edit2,
   Eye,
   CheckCircle2,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import { exportToExcel } from '@/lib/export/excel';
 import { exportToPrintablePDF } from '@/lib/export/pdf';
@@ -185,6 +186,21 @@ export default function ServantsPage() {
         { label: 'إجمالي الأنشطة المنفذة', value: filteredServants.reduce((acc, s) => acc + (s.activities_count || 0), 0) },
       ]
     );
+  };
+
+  const handleDeleteServant = async (srv: Servant) => {
+    if (!confirm(`هل أنت متأكد من حذف الخادم (${srv.full_name}) نهائياً من المنظومة؟`)) return;
+    try {
+      const res = await fetch(`/api/servants?id=${srv.id}&actorRole=${currentRole}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        loadData();
+      } else {
+        alert(data.error || 'حدث خطأ أثناء الحذف');
+      }
+    } catch {
+      alert('فشل الاتصال بالسيرفر');
+    }
   };
 
   return (
@@ -357,13 +373,22 @@ export default function ServantsPage() {
                     <Eye className="w-3.5 h-3.5" />
                   </button>
                   {canManageAllFamilies && (
-                    <button
-                      onClick={() => openEditModal(srv)}
-                      className="p-1.5 rounded-xl border border-[#EAE3E4] text-[#81777A] hover:bg-[#FAF5F6] hover:text-[#702C3B] transition-colors"
-                      title="تعديل الخادم"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
+                    <>
+                      <button
+                        onClick={() => openEditModal(srv)}
+                        className="p-1.5 rounded-xl border border-[#EAE3E4] text-[#81777A] hover:bg-[#FAF5F6] hover:text-[#702C3B] transition-colors"
+                        title="تعديل الخادم"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteServant(srv)}
+                        className="p-1.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors"
+                        title="حذف الخادم نهائياً"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
