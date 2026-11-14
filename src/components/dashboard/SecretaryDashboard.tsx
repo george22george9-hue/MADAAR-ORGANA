@@ -16,6 +16,7 @@ import {
   ExternalLink,
   ChevronLeft
 } from 'lucide-react';
+import { PriestServantsReport } from '@/components/dashboard/PriestServantsReport';
 
 export function SecretaryDashboard() {
   const [data, setData] = useState<any>(null);
@@ -74,7 +75,7 @@ export function SecretaryDashboard() {
   }
 
   return (
-    <div className="space-y-4 max-w-lg mx-auto pb-24">
+    <div className="space-y-5 max-w-4xl mx-auto pb-24">
       {/* Header */}
       <div className="bg-gradient-to-l from-[#5A1E2D] to-[#421923] text-white rounded-2xl p-5 shadow-md">
         <div className="text-xs text-white/70 mb-1">أمين الخدمة</div>
@@ -153,6 +154,9 @@ export function SecretaryDashboard() {
           </div>
         </div>
       )}
+
+      {/* Servants Pastoral & Attendance Report */}
+      <PriestServantsReport />
 
       {/* Footer */}
       <div className="text-center pt-2 pb-4">

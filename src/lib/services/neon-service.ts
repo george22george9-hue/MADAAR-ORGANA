@@ -481,6 +481,117 @@ export async function getServantsPg(familyId?: string): Promise<Servant[]> {
   }));
 }
 
+export async function getServantsPastoralOverviewPg(familyId?: string): Promise<{
+  servants: Array<{
+    id: string;
+    full_name: string;
+    phone: string;
+    confession_father?: string;
+    role_in_family: string;
+    family_id: string;
+    family_name: string;
+    status: 'present' | 'absent' | 'excused' | 'not_recorded';
+    attended_liturgy: boolean;
+    prepared_notebook: boolean;
+    taught_lesson: boolean;
+    attended_class: boolean;
+    meeting_date?: string | null;
+    excuse_reason?: string | null;
+  }>;
+  summary: {
+    totalServants: number;
+    presentCount: number;
+    absentCount: number;
+    liturgyCount: number;
+    notebookCount: number;
+    lessonCount: number;
+    liturgyRate: number;
+    notebookRate: number;
+  };
+}> {
+  let sql = `
+    SELECT 
+      s.id,
+      s.full_name,
+      s.phone,
+      s.confession_father,
+      COALESCE(fs.role_in_family, 'خادم') as role_in_family,
+      COALESCE(fs.family_id, 'fam-eb') as family_id,
+      COALESCE(f.name, 'غير محدد') as family_name,
+      COALESCE(latest_att.status, 'not_recorded') as status,
+      COALESCE(latest_att.did_opening, 0) as attended_liturgy,
+      COALESCE(latest_att.did_preparation, 0) as prepared_notebook,
+      COALESCE(latest_att.did_lesson, 0) as taught_lesson,
+      COALESCE(latest_att.did_workshop, 0) as attended_class,
+      latest_att.excuse_reason,
+      latest_att.meeting_date
+    FROM servants s
+    LEFT JOIN family_servants fs ON s.id = fs.servant_id
+    LEFT JOIN families f ON fs.family_id = f.id
+    LEFT JOIN LATERAL (
+      SELECT 
+        sa.status, 
+        sa.did_opening, 
+        sa.did_preparation, 
+        sa.did_lesson, 
+        sa.did_workshop,
+        sa.excuse_reason,
+        m.date as meeting_date
+      FROM servant_attendance sa
+      JOIN meetings m ON sa.meeting_id = m.id
+      WHERE sa.servant_id = s.id
+      ORDER BY m.date DESC, sa.recorded_at DESC
+      LIMIT 1
+    ) latest_att ON true
+    WHERE s.is_active = true
+  `;
+  const params: any[] = [];
+  if (familyId) {
+    params.push(familyId);
+    sql += ` AND fs.family_id = $${params.length}`;
+  }
+  sql += ` ORDER BY f.id ASC, s.full_name ASC`;
+
+  const rows = await queryPg(sql, params);
+  const servants = rows.map((r: any) => ({
+    id: r.id,
+    full_name: r.full_name,
+    phone: r.phone,
+    confession_father: r.confession_father || undefined,
+    role_in_family: r.role_in_family || 'خادم',
+    family_id: r.family_id,
+    family_name: r.family_name,
+    status: (r.status || 'not_recorded') as 'present' | 'absent' | 'excused' | 'not_recorded',
+    attended_liturgy: Number(r.attended_liturgy) > 0,
+    prepared_notebook: Number(r.prepared_notebook) > 0,
+    taught_lesson: Number(r.taught_lesson) > 0,
+    attended_class: Number(r.attended_class) > 0,
+    meeting_date: r.meeting_date instanceof Date ? r.meeting_date.toISOString().split('T')[0] : (r.meeting_date ? String(r.meeting_date).split('T')[0] : null),
+    excuse_reason: r.excuse_reason || null,
+  }));
+
+  const totalServants = servants.length;
+  const presentCount = servants.filter(s => s.status === 'present').length;
+  const absentCount = servants.filter(s => s.status === 'absent').length;
+  const liturgyCount = servants.filter(s => s.attended_liturgy).length;
+  const notebookCount = servants.filter(s => s.prepared_notebook).length;
+  const lessonCount = servants.filter(s => s.taught_lesson).length;
+
+  return {
+    servants,
+    summary: {
+      totalServants,
+      presentCount,
+      absentCount,
+      liturgyCount,
+      notebookCount,
+      lessonCount,
+      liturgyRate: totalServants > 0 ? Math.round((liturgyCount / totalServants) * 100) : 0,
+      notebookRate: totalServants > 0 ? Math.round((notebookCount / totalServants) * 100) : 0,
+    }
+  };
+}
+
 export async function createServantPg(data: {
   full_name: string;
   phone: string;

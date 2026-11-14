@@ -37,7 +37,7 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
 
   // ── Role-based bottom tabs (max 4-5 for simplicity) ──
   const getBottomTabs = () => {
-    if (currentRole === 'admin' || currentRole === 'priest') {
+    if (currentRole === 'admin') {
       return [
         { href: '/dashboard', label: 'الرئيسية', icon: LayoutDashboard },
         { href: '/attendance', label: 'الحضور', icon: CalendarCheck },
@@ -46,13 +46,22 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
         { href: '/settings', label: 'الإعدادات', icon: Settings },
       ];
     }
+    if (currentRole === 'priest') {
+      return [
+        { href: '/dashboard', label: 'الرئيسية', icon: LayoutDashboard },
+        { href: '/attendance', label: 'الحضور', icon: CalendarCheck },
+        { href: '/notebooks', label: 'الكشاكيل', icon: BookOpen },
+        { href: '/servants', label: 'الخدام', icon: UserCheck },
+        { href: '/alerts', label: 'الافتقاد', icon: AlertTriangle },
+      ];
+    }
     if (currentRole === 'service_secretary') {
       return [
         { href: '/dashboard', label: 'الرئيسية', icon: LayoutDashboard },
         { href: '/attendance', label: 'الحضور', icon: CalendarCheck },
         { href: '/notebooks', label: 'الكشاكيل', icon: BookOpen },
-        { href: '/families', label: 'الأسر', icon: FolderTree },
-        { href: '/settings', label: 'الإعدادات', icon: Settings },
+        { href: '/servants', label: 'الخدام', icon: UserCheck },
+        { href: '/alerts', label: 'الافتقاد', icon: AlertTriangle },
       ];
     }
     if (currentRole === 'family_leader') {
@@ -81,7 +90,7 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
       { href: '/attendance', label: 'تسجيل الحضور', icon: CalendarCheck },
     ];
 
-    if (currentRole === 'admin' || currentRole === 'priest') {
+    if (currentRole === 'admin') {
       return [
         ...common,
         { href: '/families', label: 'الأسر والقطاعات', icon: FolderTree },
@@ -91,7 +100,20 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
         { href: '/alerts', label: 'تنبيهات الغياب', icon: AlertTriangle },
         { href: '/reports', label: 'التقارير', icon: BarChart3 },
         { href: '/users', label: 'إدارة المستخدمين', icon: ShieldCheck },
-        { href: '/settings', label: 'الإعدادات', icon: Settings },
+        { href: '/settings', label: 'الإعدادات الفنية', icon: Settings },
+      ];
+    }
+
+    if (currentRole === 'priest') {
+      return [
+        ...common,
+        { href: '/families', label: 'الأسر والقطاعات', icon: FolderTree },
+        { href: '/notebooks', label: 'الكشاكيل والتقارير', icon: BookOpen },
+        { href: '/members', label: 'المخدومون', icon: Users },
+        { href: '/servants', label: 'سجل الخدام', icon: UserCheck },
+        { href: '/alerts', label: 'تنبيهات الغياب والافتقاد', icon: AlertTriangle },
+        { href: '/reports', label: 'التقارير الرعوية', icon: BarChart3 },
+        { href: '/users', label: 'الخدام الجدد والصلاحيات', icon: ShieldCheck },
       ];
     }
 
@@ -103,8 +125,7 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
         { href: '/servants', label: 'الخدام', icon: UserCheck },
         { href: '/members', label: 'المخدومون', icon: Users },
         { href: '/alerts', label: 'تنبيهات الغياب', icon: AlertTriangle },
-        { href: '/users', label: 'طلبات الانضمام', icon: ShieldCheck },
-        { href: '/settings', label: 'الإعدادات', icon: Settings },
+        { href: '/users', label: 'طلبات الانضمام والصلاحيات', icon: ShieldCheck },
       ];
     }
 

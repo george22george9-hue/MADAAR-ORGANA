@@ -35,8 +35,8 @@ export function Sidebar() {
   const { currentRole } = useAuth();
 
   const getNavItems = (): NavItem[] => {
-    // ===== Admin / Priest =====
-    if (currentRole === 'admin' || currentRole === 'priest') {
+    // ===== Admin (George - Full Technical & System Access) =====
+    if (currentRole === 'admin') {
       return [
         { href: '/dashboard', label: 'الرئيسية', icon: LayoutDashboard },
         { href: '/attendance', label: 'تسجيل الحضور', icon: CalendarCheck },
@@ -47,11 +47,26 @@ export function Sidebar() {
         { href: '/alerts', label: 'تنبيهات الغياب', icon: AlertTriangle },
         { href: '/reports', label: 'التقارير', icon: BarChart3 },
         { href: '/users', label: 'إدارة المستخدمين', icon: ShieldCheck },
-        { href: '/settings', label: 'الإعدادات', icon: Settings },
+        { href: '/settings', label: 'الإعدادات الفنية', icon: Settings },
       ];
     }
 
-    // ===== Service Secretary =====
+    // ===== Priest (قدس أبونا - الرعاية، المتابعة، قبول الخدام) =====
+    if (currentRole === 'priest') {
+      return [
+        { href: '/dashboard', label: 'لوحة الرعاية', icon: LayoutDashboard },
+        { href: '/attendance', label: 'تسجيل الحضور', icon: CalendarCheck },
+        { href: '/families', label: 'الأسر والقطاعات', icon: FolderTree },
+        { href: '/notebooks', label: 'الكشاكيل والتقارير', icon: BookOpen },
+        { href: '/members', label: 'المخدومون', icon: Users },
+        { href: '/servants', label: 'سجل الخدام', icon: UserCheck },
+        { href: '/alerts', label: 'تنبيهات الغياب والافتقاد', icon: AlertTriangle },
+        { href: '/reports', label: 'التقارير الرعوية', icon: BarChart3 },
+        { href: '/users', label: 'الخدام الجدد والصلاحيات', icon: ShieldCheck },
+      ];
+    }
+
+    // ===== Service Secretary (أمين الخدمة) =====
     if (currentRole === 'service_secretary') {
       return [
         { href: '/dashboard', label: 'الرئيسية', icon: LayoutDashboard },
@@ -61,8 +76,7 @@ export function Sidebar() {
         { href: '/servants', label: 'الخدام', icon: UserCheck },
         { href: '/members', label: 'المخدومون', icon: Users },
         { href: '/alerts', label: 'تنبيهات الغياب', icon: AlertTriangle },
-        { href: '/users', label: 'طلبات الانضمام', icon: ShieldCheck },
-        { href: '/settings', label: 'الإعدادات', icon: Settings },
+        { href: '/users', label: 'طلبات الانضمام والصلاحيات', icon: ShieldCheck },
       ];
     }
 

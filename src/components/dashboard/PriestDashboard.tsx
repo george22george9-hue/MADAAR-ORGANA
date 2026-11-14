@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/context/auth-context';
+import { PriestServantsReport } from '@/components/dashboard/PriestServantsReport';
 
 export function PriestDashboard() {
   const { currentRole, currentUser } = useAuth();
@@ -51,7 +52,7 @@ export function PriestDashboard() {
   const roleLabel = currentRole === 'admin' ? 'إدارة المنظومة' : 'الكاهن';
 
   return (
-    <div className="space-y-4 max-w-lg mx-auto pb-24">
+    <div className="space-y-5 max-w-4xl mx-auto pb-24">
       {/* Hero Card */}
       <div className="bg-gradient-to-l from-[#5A1E2D] to-[#421923] text-white rounded-2xl p-5 shadow-md">
         <div className="flex items-center gap-1.5 text-xs text-white/80 mb-2">
@@ -145,6 +146,9 @@ export function PriestDashboard() {
           </Link>
         </div>
       </div>
+
+      {/* Pastoral Servants Performance & Attendance Report */}
+      <PriestServantsReport />
 
       {/* Families Grid */}
       {data.familyStats && data.familyStats.length > 0 && (

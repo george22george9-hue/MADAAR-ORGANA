@@ -104,7 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const canManageAllFamilies = isAuthenticated && (currentRole === 'admin' || currentRole === 'priest' || currentRole === 'service_secretary');
   const canReviewReports = isAuthenticated && (currentRole === 'admin' || currentRole === 'priest' || currentRole === 'service_secretary');
   const canManageUsers = isAuthenticated && (currentRole === 'admin' || currentRole === 'priest' || currentRole === 'service_secretary');
-  const canEditSettings = isAuthenticated && (currentRole === 'admin' || currentRole === 'priest');
+  const canEditSettings = isAuthenticated && currentRole === 'admin';
 
   return (
     <AuthContext.Provider
