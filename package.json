@@ -9,11 +9,13 @@
     "start": "next start -H 0.0.0.0 -p 3000",
     "lint": "next lint"
   },
+  "engines": {
+    "node": "20.x"
+  },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.1",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.48.1",
-    "@types/pg": "^8.23.1",
     "better-sqlite3": "^11.8.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
@@ -31,6 +33,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^20.17.19",
+    "@types/pg": "^8.23.1",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "autoprefixer": "^10.4.20",
