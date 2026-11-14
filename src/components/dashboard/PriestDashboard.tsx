@@ -69,41 +69,83 @@ export function PriestDashboard() {
 
       {/* Quick Actions — Big Friendly Buttons */}
       <div className="grid grid-cols-2 gap-3">
-        <Link
-          href="/attendance"
-          className="p-4 rounded-2xl bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 transition-all active:scale-[0.98] flex flex-col"
-        >
-          <CalendarCheck className="w-7 h-7 mb-2 opacity-90" />
-          <span className="font-bold text-sm">تسجيل الحضور</span>
-          <span className="text-[10px] text-white/70 mt-0.5">رصد حضور اللقاء</span>
-        </Link>
+        {currentRole === 'priest' ? (
+          <>
+            <Link
+              href="/attendance/servants"
+              className="p-4 rounded-2xl bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 transition-all active:scale-[0.98] flex flex-col"
+            >
+              <UserCheck className="w-7 h-7 mb-2 opacity-90" />
+              <span className="font-bold text-sm">غياب ومتابعة الخدام</span>
+              <span className="text-[10px] text-white/80 mt-0.5">القداس، الكشكول، والدرس</span>
+            </Link>
 
-        <Link
-          href="/notebooks"
-          className="p-4 rounded-2xl bg-[#702C3B] text-white shadow-sm hover:bg-[#5A232F] transition-all active:scale-[0.98] flex flex-col"
-        >
-          <BookOpen className="w-7 h-7 mb-2 opacity-90" />
-          <span className="font-bold text-sm">الكشاكيل</span>
-          <span className="text-[10px] text-white/70 mt-0.5">تقارير الأسبوع</span>
-        </Link>
+            <Link
+              href="/alerts"
+              className="p-4 rounded-2xl bg-amber-600 text-white shadow-sm hover:bg-amber-700 transition-all active:scale-[0.98] flex flex-col"
+            >
+              <Users className="w-7 h-7 mb-2 opacity-90" />
+              <span className="font-bold text-sm">غياب المخدومين والافتقاد</span>
+              <span className="text-[10px] text-white/80 mt-0.5">رعاية الحالات الغائبة</span>
+            </Link>
 
-        <Link
-          href="/families"
-          className="p-4 rounded-2xl bg-purple-700 text-white shadow-sm hover:bg-purple-800 transition-all active:scale-[0.98] flex flex-col"
-        >
-          <FolderTree className="w-7 h-7 mb-2 opacity-90" />
-          <span className="font-bold text-sm">الأسر والقطاعات</span>
-          <span className="text-[10px] text-white/70 mt-0.5">{data.familiesCount || 10} أسرة</span>
-        </Link>
+            <Link
+              href="/notebooks"
+              className="p-4 rounded-2xl bg-[#702C3B] text-white shadow-sm hover:bg-[#5A232F] transition-all active:scale-[0.98] flex flex-col"
+            >
+              <BookOpen className="w-7 h-7 mb-2 opacity-90" />
+              <span className="font-bold text-sm">الكشاكيل والتقارير</span>
+              <span className="text-[10px] text-white/80 mt-0.5">متابعة تقارير الأسر</span>
+            </Link>
 
-        <Link
-          href="/users"
-          className="p-4 rounded-2xl bg-sky-700 text-white shadow-sm hover:bg-sky-800 transition-all active:scale-[0.98] flex flex-col"
-        >
-          <ShieldCheck className="w-7 h-7 mb-2 opacity-90" />
-          <span className="font-bold text-sm">إدارة المستخدمين</span>
-          <span className="text-[10px] text-white/70 mt-0.5">الحسابات والصلاحيات</span>
-        </Link>
+            <Link
+              href="/users?tab=requests"
+              className="p-4 rounded-2xl bg-sky-700 text-white shadow-sm hover:bg-sky-800 transition-all active:scale-[0.98] flex flex-col"
+            >
+              <ShieldCheck className="w-7 h-7 mb-2 opacity-90" />
+              <span className="font-bold text-sm">الخدام الجدد والصلاحيات</span>
+              <span className="text-[10px] text-white/80 mt-0.5">اعتماد وتسكين الخدام</span>
+            </Link>
+          </>
+        ) : (
+          <>
+            <Link
+              href="/attendance"
+              className="p-4 rounded-2xl bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 transition-all active:scale-[0.98] flex flex-col"
+            >
+              <CalendarCheck className="w-7 h-7 mb-2 opacity-90" />
+              <span className="font-bold text-sm">تسجيل الحضور</span>
+              <span className="text-[10px] text-white/70 mt-0.5">رصد حضور اللقاء</span>
+            </Link>
+
+            <Link
+              href="/attendance/servants"
+              className="p-4 rounded-2xl bg-teal-700 text-white shadow-sm hover:bg-teal-800 transition-all active:scale-[0.98] flex flex-col"
+            >
+              <UserCheck className="w-7 h-7 mb-2 opacity-90" />
+              <span className="font-bold text-sm">سجل غياب الخدام</span>
+              <span className="text-[10px] text-white/70 mt-0.5">القداس والكشاكيل</span>
+            </Link>
+
+            <Link
+              href="/notebooks"
+              className="p-4 rounded-2xl bg-[#702C3B] text-white shadow-sm hover:bg-[#5A232F] transition-all active:scale-[0.98] flex flex-col"
+            >
+              <BookOpen className="w-7 h-7 mb-2 opacity-90" />
+              <span className="font-bold text-sm">الكشاكيل</span>
+              <span className="text-[10px] text-white/70 mt-0.5">تقارير الأسبوع</span>
+            </Link>
+
+            <Link
+              href="/users"
+              className="p-4 rounded-2xl bg-sky-700 text-white shadow-sm hover:bg-sky-800 transition-all active:scale-[0.98] flex flex-col"
+            >
+              <ShieldCheck className="w-7 h-7 mb-2 opacity-90" />
+              <span className="font-bold text-sm">إدارة المستخدمين</span>
+              <span className="text-[10px] text-white/70 mt-0.5">الحسابات والطلبات</span>
+            </Link>
+          </>
+        )}
       </div>
 
       {/* Stats Cards */}

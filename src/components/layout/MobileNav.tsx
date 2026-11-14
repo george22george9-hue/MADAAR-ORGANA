@@ -48,11 +48,11 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
     }
     if (currentRole === 'priest') {
       return [
-        { href: '/dashboard', label: 'الرئيسية', icon: LayoutDashboard },
-        { href: '/attendance', label: 'الحضور', icon: CalendarCheck },
+        { href: '/dashboard', label: 'الرعاية', icon: LayoutDashboard },
+        { href: '/attendance/servants', label: 'غياب الخدام', icon: UserCheck },
+        { href: '/alerts', label: 'غياب المخدومين', icon: AlertTriangle },
         { href: '/notebooks', label: 'الكشاكيل', icon: BookOpen },
-        { href: '/servants', label: 'الخدام', icon: UserCheck },
-        { href: '/alerts', label: 'الافتقاد', icon: AlertTriangle },
+        { href: '/users', label: 'الخدام الجدد', icon: ShieldCheck },
       ];
     }
     if (currentRole === 'service_secretary') {
@@ -106,12 +106,12 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
 
     if (currentRole === 'priest') {
       return [
-        ...common,
+        { href: '/dashboard', label: 'لوحة الرعاية', icon: LayoutDashboard },
+        { href: '/attendance/servants', label: 'غياب ومتابعة الخدام', icon: UserCheck },
+        { href: '/alerts', label: 'غياب المخدومين والافتقاد', icon: AlertTriangle },
         { href: '/families', label: 'الأسر والقطاعات', icon: FolderTree },
         { href: '/notebooks', label: 'الكشاكيل والتقارير', icon: BookOpen },
-        { href: '/members', label: 'المخدومون', icon: Users },
         { href: '/servants', label: 'سجل الخدام', icon: UserCheck },
-        { href: '/alerts', label: 'تنبيهات الغياب والافتقاد', icon: AlertTriangle },
         { href: '/reports', label: 'التقارير الرعوية', icon: BarChart3 },
         { href: '/users', label: 'الخدام الجدد والصلاحيات', icon: ShieldCheck },
       ];

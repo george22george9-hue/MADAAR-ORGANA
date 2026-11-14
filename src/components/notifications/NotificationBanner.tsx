@@ -114,16 +114,22 @@ export function NotificationBanner() {
   if (!activeNotification || isDismissed) return null;
 
   // Icon & theme styling by notification type
-  const isPriest = activeNotification.type === 'priest_broadcast';
+  const isPriest = activeNotification.type === 'priest_broadcast' || activeNotification.sender_name?.includes('أبونا');
   const isTuesday = activeNotification.type === 'tuesday_prep';
   const isAbsence = activeNotification.type === 'servant_absence';
+  const isAppAdmin = activeNotification.sender_name === 'إدارة الأبلكيشن' || activeNotification.title?.includes('إدارة الأبلكيشن');
 
   let bannerStyle = 'bg-[#FAF5F6] border-[#E8D9DC] text-[#421923]';
   let badgeStyle = 'bg-[#702C3B] text-white';
   let icon = <Bell className="w-4 h-4 text-[#702C3B]" />;
   let senderPrefix = activeNotification.sender_name;
 
-  if (isPriest) {
+  if (isAppAdmin) {
+    bannerStyle = 'bg-sky-50/95 border-sky-200 text-sky-950 shadow-sm';
+    badgeStyle = 'bg-sky-700 text-white';
+    icon = <span className="text-sm">📱</span>;
+    senderPrefix = 'إدارة الأبلكيشن';
+  } else if (isPriest) {
     bannerStyle = 'bg-amber-50/95 border-amber-200 text-amber-950 shadow-sm';
     badgeStyle = 'bg-amber-600 text-white';
     icon = <span className="text-sm">✝️</span>;
