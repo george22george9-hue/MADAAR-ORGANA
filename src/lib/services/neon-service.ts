@@ -6,6 +6,7 @@
 // ====================================================================
 
 import { getPgPool, queryPg, queryOnePg } from '@/lib/db/neon';
+import { hashPassword, verifyPassword } from '@/lib/auth/password';
 import {
   ChurchUser,
   UserRole,
@@ -114,7 +115,8 @@ export async function createUserPg(data: {
   password?: string;
 }): Promise<ChurchUser> {
   const id = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-  const passwordHash = data.password ? data.password.trim() : 'George-O229';
+  const rawPass = data.password ? data.password.trim() : 'George-O229';
+  const passwordHash = await hashPassword(rawPass);
 
   await queryPg(`
     INSERT INTO users (id, email, full_name, phone, role, assigned_family_id, confession_father, password_hash, is_active)
@@ -171,12 +173,14 @@ export async function deleteUserPg(id: string): Promise<boolean> {
 }
 
 export async function changeUserPasswordPg(userId: string, currentPass: string, newPass: string): Promise<boolean> {
-  const user = await getUserByIdPg(userId);
+  const user = await queryOnePg(`SELECT * FROM users WHERE id = $1`, [userId]);
   if (!user) throw new Error('المستخدم غير موجود');
-  if (user.password_hash && user.password_hash !== currentPass.trim()) {
+  const isValid = await verifyPassword(currentPass.trim(), user.password_hash);
+  if (!isValid) {
     throw new Error('كلمة المرور الحالية غير صحيحة');
   }
-  await queryPg(`UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2`, [newPass.trim(), userId]);
+  const newHash = await hashPassword(newPass.trim());
+  await queryPg(`UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2`, [newHash, userId]);
   return true;
 }
 
@@ -221,6 +225,9 @@ export async function createJoinRequestPg(data: {
   notes?: string;
 }): Promise<JoinRequest> {
   const id = `req-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const rawPass = data.password?.trim() || 'George-O229';
+  const passwordHash = await hashPassword(rawPass);
+
   await queryPg(`
     INSERT INTO join_requests (
       id, full_name, phone, email, password_hash, requested_role, requested_family_id,
@@ -231,7 +238,7 @@ export async function createJoinRequestPg(data: {
     data.fullName.trim(),
     data.phone.trim(),
     data.email?.trim() || null,
-    data.password?.trim() || 'George-O229',
+    passwordHash,
     data.requestedRole,
     data.requestedFamilyId || null,
     data.confessionFather?.trim() || null,
@@ -273,6 +280,10 @@ export async function approveJoinRequestPg(
     const userRow = (await client.query(`SELECT id FROM users WHERE phone = $1`, [req.phone])).rows[0];
     let userId = userRow?.id;
 
+    const finalPassHash = req.password_hash
+      ? (req.password_hash.startsWith('$2') ? req.password_hash : await hashPassword(req.password_hash))
+      : await hashPassword('George-O229');
+
     if (userRow) {
       await client.query(`
         UPDATE users
@@ -289,7 +300,7 @@ export async function approveJoinRequestPg(
         req.requested_role,
         req.requested_family_id || null,
         req.confession_father || null,
-        req.password_hash || null,
+        finalPassHash,
         userId,
       ]);
     } else {
@@ -305,7 +316,7 @@ export async function approveJoinRequestPg(
         req.requested_role,
         req.requested_family_id || null,
         req.confession_father || null,
-        req.password_hash || 'George-O229',
+        finalPassHash,
       ]);
     }
 

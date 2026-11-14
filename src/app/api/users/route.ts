@@ -17,10 +17,12 @@ export async function GET() {
   try {
     if (isNeonConfigured()) {
       const users = await getUsersPg();
-      return NextResponse.json({ success: true, users });
+      const sanitized = users.map(({ password_hash, ...u }: any) => u);
+      return NextResponse.json({ success: true, users: sanitized });
     }
     const users = getUsers();
-    return NextResponse.json({ success: true, users });
+    const sanitized = users.map(({ password_hash, ...u }: any) => u);
+    return NextResponse.json({ success: true, users: sanitized });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }

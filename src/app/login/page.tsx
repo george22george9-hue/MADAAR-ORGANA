@@ -104,57 +104,30 @@ export default function LoginPage() {
     }
 
     try {
-      // 1. Check users API for active approved accounts
-      const res = await fetch('/api/users');
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phoneOrEmail: term, password }),
+      });
       const data = await res.json();
-      if (data.success && data.users) {
-        const found = data.users.find(
-          (u: ChurchUser) =>
-            u.phone === term ||
-            (u.email && u.email.toLowerCase() === term.toLowerCase())
-        );
 
-        if (found) {
-          if (!found.is_active) {
-            setFormPendingNotice('حسابك غير نشط حالياً أو تم إيقافه مؤقتاً من قبل الإدارة.');
-            return;
-          }
-
-          // Strict password verification against database
-          if (found.password_hash && found.password_hash !== password.trim()) {
-            setFormError('كلمة المرور غير صحيحة. يرجى التأكد وإعادة المحاولة.');
-            return;
-          }
-
-          loginAs(found.role, found);
-          router.push('/dashboard');
-          return;
-        }
+      if (data.success && data.user) {
+        loginAs(data.user.role, data.user);
+        router.push('/dashboard');
+        return;
       }
 
-      // 2. Check join requests API to see if it's pending
-      try {
-        const reqRes = await fetch('/api/join-requests');
-        const reqData = await reqRes.json();
-        if (reqData.success && reqData.requests) {
-          const reqMatch = reqData.requests.find((r: any) => r.phone === term);
-          if (reqMatch) {
-            if (reqMatch.status === 'pending') {
-              setFormPendingNotice(
-                `طلب انضمامك لأسرة (${reqMatch.requested_family_name || 'الخدمة'}) بصفتك (${reqMatch.requested_role === 'family_leader' ? 'أمين أسرة' : 'خادم في الأسرة'}) قيد المراجعة والاعتماد حالياً من قبل إدارة المنظومة أو قدس أبونا الكاهن أو أمين الخدمة. سيتم تفعيل حسابك فور الموافقة.`
-              );
-              return;
-            } else if (reqMatch.status === 'rejected') {
-              setFormError(`عذراً، تم رفض طلب الانضمام السابق المسجل لهذا الرقم. (السبب: ${reqMatch.rejection_reason || 'غير محدد'})`);
-              return;
-            }
-          }
-        }
-      } catch (err) {
-        console.error('Check join requests error:', err);
+      if (data.pendingNotice) {
+        setFormPendingNotice(data.pendingNotice);
+        return;
       }
 
-      setFormError('لم يتم العثور على حساب مسجل بهذا الرقم. يمكنك تقديم "طلب انضمام جديد للخدمة" من التبويب بالأعلى أو التواصل مع إدارة المنظومة.');
+      if (data.error) {
+        setFormError(data.error);
+        return;
+      }
+
+      setFormError('تعذر تسجيل الدخول. يرجى التأكد من صحة البيانات والمحاولة مجدداً.');
     } catch {
       setFormError('حدث خطأ أثناء محاولة تسجيل الدخول. يرجى التأكد من اتصال السيرفر.');
     }
