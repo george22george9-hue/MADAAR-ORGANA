@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getMeetings, createMeeting } from '@/lib/services/organa-service';
-import { isNeonConfigured, getMeetingsPg } from '@/lib/services/neon-service';
+import { isNeonConfigured, getMeetingsPg, createMeetingPg } from '@/lib/services/neon-service';
 import { INITIAL_PERSONAS } from '@/lib/constants/personas';
 import { UserRole } from '@/types/organa';
 
@@ -35,6 +35,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const actorRole = (body.actorRole as UserRole) || 'family_leader';
     const actor = INITIAL_PERSONAS[actorRole];
+
+    if (isNeonConfigured()) {
+      const meeting = await createMeetingPg(body);
+      return NextResponse.json({ success: true, meeting });
+    }
 
     const meeting = createMeeting(body, actor);
     return NextResponse.json({ success: true, meeting });

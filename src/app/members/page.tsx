@@ -168,9 +168,12 @@ export default function MembersPage() {
       if (json.success) {
         setShowModal(false);
         loadData();
+      } else {
+        alert(json.error || 'تعذر حفظ بيانات المخدوم. يرجى التأكد من ملء الحقول الإلزامية.');
       }
     } catch (err) {
       console.error(err);
+      alert('حدث خطأ بالاتصال بالسيرفر أثناء حفظ المخدوم.');
     } finally {
       setSubmitting(false);
     }

@@ -64,6 +64,7 @@ function AttendanceContent() {
 
   const [families, setFamilies] = useState<Family[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [meetingsLoaded, setMeetingsLoaded] = useState(false);
   const [selectedFamilyId, setSelectedFamilyId] = useState<string>(assignedFamilyId || 'fam-prep-boys');
   const [selectedDate, setSelectedDate] = useState<string>(getClosestFriday());
   const [selectedMeetingId, setSelectedMeetingId] = useState<string>('');
@@ -107,7 +108,7 @@ function AttendanceContent() {
     fetch(`/api/meetings?role=${currentRole}${famParam}`)
       .then(r => r.json())
       .then(res => {
-        if (res.success && res.meetings.length > 0) {
+        if (res.success && res.meetings) {
           const sorted = [...res.meetings].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
           setMeetings(sorted);
 
@@ -120,14 +121,18 @@ function AttendanceContent() {
             }
           }
         }
+        setMeetingsLoaded(true);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        setMeetingsLoaded(true);
+        setLoading(false);
+      });
   }, [currentRole, meetingParamId, assignedFamilyId]);
 
   // 3. Resolve Meeting when selectedFamilyId or selectedDate changes
   useEffect(() => {
-    if (!selectedFamilyId || !selectedDate || meetings.length === 0) return;
+    if (!meetingsLoaded || !selectedFamilyId || !selectedDate) return;
     const match = meetings.find(m => m.family_id === selectedFamilyId && m.date === selectedDate);
     if (match) {
       setSelectedMeetingId(match.id);
@@ -152,7 +157,7 @@ function AttendanceContent() {
         })
         .catch(console.error);
     }
-  }, [selectedFamilyId, selectedDate, meetings, currentRole]);
+  }, [meetingsLoaded, selectedFamilyId, selectedDate, meetings, currentRole]);
 
   // Load Attendance for selected meeting
   const loadAttendance = (mId: string) => {

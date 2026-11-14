@@ -553,7 +553,7 @@ export async function getServedMembersPg(familyId?: string, search?: string): Pr
   }
   if (search) {
     params.push(`%${search.trim()}%`);
-    sql += ` AND (m.full_name ILIKE $${params.length} OR m.phone ILIKE $${params.length})`;
+    sql += ` AND (m.full_name ILIKE $${params.length} OR m.phone ILIKE $${params.length} OR m.guardian_phone ILIKE $${params.length} OR m.code ILIKE $${params.length})`;
   }
   sql += ` ORDER BY m.full_name ASC`;
 
@@ -561,8 +561,10 @@ export async function getServedMembersPg(familyId?: string, search?: string): Pr
   return rows.map(r => ({
     ...r,
     is_active: Boolean(r.is_active),
+    current_family_name: r.family_name || 'غير محدد',
     family_name: r.family_name || 'غير محدد',
     assigned_servant_name: r.assigned_servant_name || 'غير معين',
+    birth_date: r.birth_date instanceof Date ? r.birth_date.toISOString().split('T')[0] : String(r.birth_date || '').split('T')[0],
   }));
 }
 
@@ -574,72 +576,112 @@ export async function getMemberByIdPg(id: string): Promise<ServedMember | null> 
     LEFT JOIN servants s ON m.assigned_servant_id = s.id
     WHERE m.id = $1
   `, [id]);
-  return row ? { ...row, is_active: Boolean(row.is_active) } : null;
+  return row ? {
+    ...row,
+    is_active: Boolean(row.is_active),
+    current_family_name: row.family_name || 'غير محدد',
+    family_name: row.family_name || 'غير محدد',
+    assigned_servant_name: row.assigned_servant_name || 'غير معين',
+    birth_date: row.birth_date instanceof Date ? row.birth_date.toISOString().split('T')[0] : String(row.birth_date || '').split('T')[0],
+  } : null;
 }
 
 export async function createServedMemberPg(data: {
   full_name: string;
-  phone?: string;
+  code?: string;
+  gender?: 'male' | 'female';
+  birth_date?: string;
   stage?: string;
   current_family_id: string;
   assigned_servant_id?: string;
-  confession_father?: string;
-  birth_date?: string;
-  national_id?: string;
+  guardian_name?: string;
+  guardian_phone?: string;
+  guardian_relationship?: string;
+  phone?: string;
   address?: string;
+  confession_father?: string;
+  national_id?: string;
   academic_year_or_job?: string;
   notes?: string;
+  photo_url?: string;
 }): Promise<ServedMember> {
   const id = `mem-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const code = data.code?.trim() || `MEM-${Math.floor(100 + Math.random() * 900)}`;
+  const gender = data.gender || 'male';
+  const birthDate = data.birth_date || '2013-05-15';
+  const guardianName = data.guardian_name?.trim() || 'ولي أمر';
+  const guardianPhone = data.guardian_phone?.trim() || data.phone?.trim() || '01000000000';
+  const guardianRel = data.guardian_relationship?.trim() || 'الأب';
+
   await queryPg(`
     INSERT INTO served_members (
-      id, full_name, phone, stage, current_family_id, assigned_servant_id,
-      confession_father, birth_date, national_id, address, academic_year_or_job, is_active, notes
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true, $12)
+      id, code, full_name, gender, birth_date, stage, current_family_id, assigned_servant_id,
+      guardian_name, guardian_phone, guardian_relationship, phone, address,
+      confession_father, national_id, academic_year_or_job, is_active, notes, photo_url
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8,
+      $9, $10, $11, $12, $13,
+      $14, $15, $16, true, $17, $18
+    )
   `, [
     id,
+    code,
     data.full_name.trim(),
-    data.phone?.trim() || null,
+    gender,
+    birthDate,
     data.stage?.trim() || 'عام',
     data.current_family_id,
     data.assigned_servant_id || null,
-    data.confession_father?.trim() || null,
-    data.birth_date || null,
-    data.national_id?.trim() || null,
+    guardianName,
+    guardianPhone,
+    guardianRel,
+    data.phone?.trim() || null,
     data.address?.trim() || null,
+    data.confession_father?.trim() || null,
+    data.national_id?.trim() || null,
     data.academic_year_or_job?.trim() || null,
     data.notes?.trim() || null,
+    data.photo_url?.trim() || null,
   ]);
+
   return (await getMemberByIdPg(id))!;
 }
 
-export async function updateServedMemberPg(id: string, data: Partial<ServedMember>): Promise<ServedMember> {
+export async function updateServedMemberPg(id: string, data: Partial<ServedMember> & Record<string, any>): Promise<ServedMember> {
   await queryPg(`
     UPDATE served_members
     SET full_name = COALESCE($1, full_name),
-        phone = COALESCE($2, phone),
-        stage = COALESCE($3, stage),
-        current_family_id = COALESCE($4, current_family_id),
-        assigned_servant_id = CASE WHEN $5::text = '__CLEAR__' THEN NULL WHEN $5::text IS NOT NULL THEN $5 ELSE assigned_servant_id END,
-        confession_father = COALESCE($6, confession_father),
-        birth_date = COALESCE($7, birth_date),
-        national_id = COALESCE($8, national_id),
-        address = COALESCE($9, address),
-        academic_year_or_job = COALESCE($10, academic_year_or_job),
-        notes = COALESCE($11, notes),
-        is_active = COALESCE($12, is_active),
+        gender = COALESCE($2, gender),
+        birth_date = COALESCE($3, birth_date),
+        stage = COALESCE($4, stage),
+        current_family_id = COALESCE($5, current_family_id),
+        assigned_servant_id = CASE WHEN $6::text = '__CLEAR__' THEN NULL WHEN $6::text IS NOT NULL THEN $6 ELSE assigned_servant_id END,
+        guardian_name = COALESCE($7, guardian_name),
+        guardian_phone = COALESCE($8, guardian_phone),
+        guardian_relationship = COALESCE($9, guardian_relationship),
+        phone = COALESCE($10, phone),
+        address = COALESCE($11, address),
+        confession_father = COALESCE($12, confession_father),
+        national_id = COALESCE($13, national_id),
+        academic_year_or_job = COALESCE($14, academic_year_or_job),
+        notes = COALESCE($15, notes),
+        is_active = COALESCE($16, is_active),
         updated_at = now()
-    WHERE id = $13
+    WHERE id = $17
   `, [
     data.full_name ?? null,
-    data.phone ?? null,
+    data.gender ?? null,
+    data.birth_date ?? null,
     data.stage ?? null,
     data.current_family_id ?? null,
     data.assigned_servant_id === null ? '__CLEAR__' : (data.assigned_servant_id ?? null),
-    data.confession_father ?? null,
-    data.birth_date ?? null,
-    data.national_id ?? null,
+    data.guardian_name ?? null,
+    data.guardian_phone ?? null,
+    data.guardian_relationship ?? null,
+    data.phone ?? null,
     data.address ?? null,
+    data.confession_father ?? null,
+    data.national_id ?? null,
     data.academic_year_or_job ?? null,
     data.notes ?? null,
     data.is_active !== undefined ? data.is_active : null,
@@ -696,42 +738,138 @@ export async function getMeetingsPg(familyId?: string, date?: string): Promise<M
   }));
 }
 
+export async function createMeetingPg(data: {
+  family_id: string;
+  date: string;
+  title?: string;
+  lesson_title?: string;
+  lesson_topic?: string;
+  start_time?: string;
+  end_time?: string;
+  notes?: string;
+  status?: string;
+}): Promise<Meeting> {
+  const dateStr = String(data.date).split('T')[0];
+  const existing = await queryOnePg(`
+    SELECT m.*, f.name as family_name, f.color_code as family_color
+    FROM meetings m
+    JOIN families f ON m.family_id = f.id
+    WHERE m.family_id = $1 AND m.date = $2
+  `, [data.family_id, dateStr]);
+
+  if (existing) {
+    return {
+      ...existing,
+      date: existing.date instanceof Date ? existing.date.toISOString().split('T')[0] : String(existing.date).split('T')[0],
+    };
+  }
+
+  const id = `mtg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const title = data.title || `لقاء الجمعة (${dateStr})`;
+  await queryPg(`
+    INSERT INTO meetings (
+      id, family_id, academic_year_id, date, title, lesson_title, lesson_topic, start_time, end_time, status, notes
+    ) VALUES ($1, $2, 'ay-2026-2027', $3, $4, $5, $6, $7, $8, $9, $10)
+  `, [
+    id,
+    data.family_id,
+    dateStr,
+    title,
+    data.lesson_title || null,
+    data.lesson_topic || null,
+    data.start_time || '17:00',
+    data.end_time || '19:00',
+    data.status || 'scheduled',
+    data.notes || null,
+  ]);
+
+  const meeting = await queryOnePg(`
+    SELECT m.*, f.name as family_name, f.color_code as family_color
+    FROM meetings m
+    JOIN families f ON m.family_id = f.id
+    WHERE m.id = $1
+  `, [id]);
+
+  return {
+    ...meeting,
+    date: meeting.date instanceof Date ? meeting.date.toISOString().split('T')[0] : String(meeting.date).split('T')[0],
+  };
+}
+
 export async function getMeetingAttendancePg(meetingId: string): Promise<{
-  memberAttendance: any[];
-  servantAttendance: any[];
+  members: any[];
+  servants: any[];
 }> {
-  const memberAttendance = await queryPg(`
-    SELECT a.*, m.full_name as member_name, m.phone as member_phone,
-           m.confession_father, s.full_name as assigned_servant_name
-    FROM meeting_attendance a
-    JOIN served_members m ON a.member_id = m.id
-    LEFT JOIN servants s ON m.assigned_servant_id = s.id
-    WHERE a.meeting_id = $1
-    ORDER BY m.full_name ASC
-  `, [meetingId]);
+  const meeting = await queryOnePg(`SELECT family_id FROM meetings WHERE id = $1`, [meetingId]);
+  if (!meeting) {
+    return { members: [], servants: [] };
+  }
 
-  const servantAttendance = await queryPg(`
-    SELECT a.*, s.full_name as servant_name, s.phone as servant_phone,
-           fs.role_in_family
-    FROM servant_attendance a
-    JOIN servants s ON a.servant_id = s.id
-    LEFT JOIN family_servants fs ON s.id = fs.servant_id
-    WHERE a.meeting_id = $1
+  const familyId = meeting.family_id;
+
+  const members = await queryPg(`
+    SELECT 
+      COALESCE(ma.id, 'att-' || $1 || '-' || sm.id) as id,
+      $1 as meeting_id,
+      sm.id as member_id,
+      COALESCE(ma.status, 'not_recorded') as status,
+      ma.excuse_reason,
+      COALESCE(ma.attended_liturgy, 0) as attended_liturgy,
+      COALESCE(ma.attended_communion, 0) as attended_communion,
+      COALESCE(ma.attended_class, 0) as attended_class,
+      COALESCE(ma.attended_confession, 0) as attended_confession,
+      sm.full_name as member_name, 
+      sm.code, 
+      sm.guardian_phone,
+      sm.confession_father,
+      s.full_name as assigned_servant_name
+    FROM served_members sm
+    LEFT JOIN meeting_attendance ma ON ma.meeting_id = $1 AND ma.member_id = sm.id
+    LEFT JOIN servants s ON sm.assigned_servant_id = s.id
+    WHERE sm.current_family_id = $2 AND sm.is_active = true
+    ORDER BY sm.full_name ASC
+  `, [meetingId, familyId]);
+
+  const servants = await queryPg(`
+    SELECT 
+      COALESCE(sa.id, 'satt-' || $1 || '-' || s.id) as id,
+      $1 as meeting_id,
+      s.id as servant_id,
+      COALESCE(sa.status, 'not_recorded') as status,
+      sa.excuse_reason,
+      COALESCE(sa.did_opening, 0) as did_opening,
+      COALESCE(sa.did_workshop, 0) as did_workshop,
+      COALESCE(sa.did_preparation, 0) as did_preparation,
+      COALESCE(sa.did_lesson, 0) as did_lesson,
+      s.full_name as servant_name, 
+      s.phone,
+      s.confession_father,
+      fs.role_in_family
+    FROM family_servants fs
+    JOIN servants s ON fs.servant_id = s.id
+    LEFT JOIN servant_attendance sa ON sa.meeting_id = $1 AND sa.servant_id = s.id
+    WHERE fs.family_id = $2 AND s.is_active = true
     ORDER BY s.full_name ASC
-  `, [meetingId]);
+  `, [meetingId, familyId]);
 
-  return { memberAttendance, servantAttendance };
+  return { members, servants };
 }
 
 export async function bulkSaveMemberAttendancePg(
   meetingId: string,
   records: Array<{
-    memberId: string;
+    memberId?: string;
+    member_id?: string;
     status: string;
-    attendedLiturgy?: boolean;
-    attendedCommunion?: boolean;
-    attendedClass?: boolean;
-    attendedConfession?: boolean;
+    attended_liturgy?: number | boolean;
+    attendedLiturgy?: number | boolean;
+    attended_communion?: number | boolean;
+    attendedCommunion?: number | boolean;
+    attended_class?: number | boolean;
+    attendedClass?: number | boolean;
+    attended_confession?: number | boolean;
+    attendedConfession?: number | boolean;
+    excuse_reason?: string;
     excuseReason?: string;
   }>,
   recorder: { id: string; name: string }
@@ -741,7 +879,16 @@ export async function bulkSaveMemberAttendancePg(
   try {
     await client.query('BEGIN');
     for (const r of records) {
-      const id = `att-m-${meetingId}-${r.memberId}`;
+      const memberId = r.memberId || r.member_id;
+      if (!memberId) continue;
+
+      const id = `att-m-${meetingId}-${memberId}`;
+      const attendedLiturgy = (r.attended_liturgy || r.attendedLiturgy) ? 1 : 0;
+      const attendedCommunion = (r.attended_communion || r.attendedCommunion) ? 1 : 0;
+      const attendedClass = (r.attended_class || r.attendedClass) ? 1 : 0;
+      const attendedConfession = (r.attended_confession || r.attendedConfession) ? 1 : 0;
+      const excuse = r.excuse_reason || r.excuseReason || null;
+
       await client.query(`
         INSERT INTO meeting_attendance (
           id, meeting_id, member_id, status, attended_liturgy, attended_communion,
@@ -759,13 +906,13 @@ export async function bulkSaveMemberAttendancePg(
       `, [
         id,
         meetingId,
-        r.memberId,
-        r.status,
-        r.attendedLiturgy ? 1 : 0,
-        r.attendedCommunion ? 1 : 0,
-        r.attendedClass ? 1 : 0,
-        r.attendedConfession ? 1 : 0,
-        r.excuseReason || null,
+        memberId,
+        r.status || 'not_recorded',
+        attendedLiturgy,
+        attendedCommunion,
+        attendedClass,
+        attendedConfession,
+        excuse,
         recorder.name,
       ]);
     }
@@ -782,12 +929,18 @@ export async function bulkSaveMemberAttendancePg(
 export async function bulkSaveServantAttendancePg(
   meetingId: string,
   records: Array<{
-    servantId: string;
+    servantId?: string;
+    servant_id?: string;
     status: string;
-    didOpening?: boolean;
-    didWorkshop?: boolean;
-    didPreparation?: boolean;
-    didLesson?: boolean;
+    did_opening?: number | boolean;
+    didOpening?: number | boolean;
+    did_workshop?: number | boolean;
+    didWorkshop?: number | boolean;
+    did_preparation?: number | boolean;
+    didPreparation?: number | boolean;
+    did_lesson?: number | boolean;
+    didLesson?: number | boolean;
+    excuse_reason?: string;
     excuseReason?: string;
   }>,
   recorder: { id: string; name: string }
@@ -797,7 +950,16 @@ export async function bulkSaveServantAttendancePg(
   try {
     await client.query('BEGIN');
     for (const r of records) {
-      const id = `att-s-${meetingId}-${r.servantId}`;
+      const servantId = r.servantId || r.servant_id;
+      if (!servantId) continue;
+
+      const id = `att-s-${meetingId}-${servantId}`;
+      const didOpening = (r.did_opening || r.didOpening) ? 1 : 0;
+      const didWorkshop = (r.did_workshop || r.didWorkshop) ? 1 : 0;
+      const didPreparation = (r.did_preparation || r.didPreparation) ? 1 : 0;
+      const didLesson = (r.did_lesson || r.didLesson) ? 1 : 0;
+      const excuse = r.excuse_reason || r.excuseReason || null;
+
       await client.query(`
         INSERT INTO servant_attendance (
           id, meeting_id, servant_id, status, did_opening, did_workshop,
@@ -815,13 +977,13 @@ export async function bulkSaveServantAttendancePg(
       `, [
         id,
         meetingId,
-        r.servantId,
-        r.status,
-        r.didOpening ? 1 : 0,
-        r.didWorkshop ? 1 : 0,
-        r.didPreparation ? 1 : 0,
-        r.didLesson ? 1 : 0,
-        r.excuseReason || null,
+        servantId,
+        r.status || 'not_recorded',
+        didOpening,
+        didWorkshop,
+        didPreparation,
+        didLesson,
+        excuse,
         recorder.name,
       ]);
     }
