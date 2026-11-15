@@ -78,30 +78,50 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
-    // 3. Broadcast Priest or Admin Message
-    const senderRole = (body.senderRole as UserRole) || 'priest';
-    const senderName = body.senderName || (senderRole === 'priest' ? 'قدس أبونا الكاهن' : 'إدارة المنظومة');
+    // 3. Broadcast Message with Strict Role & Sender Enforcement (محدش يقدر يبعت باسم التاني)
+    const clientRole = (body.senderRole as UserRole) || 'admin';
     const message = (body.message || '').trim();
 
     if (!message) {
       return NextResponse.json({ success: false, error: 'يرجى كتابة نص الرسالة أولاً' }, { status: 400 });
     }
 
+    let enforcedSenderName = 'إدارة الأبلكيشن';
+    let enforcedRole: UserRole = 'admin';
+    let enforcedType: 'priest_broadcast' | 'general' = 'general';
+    let enforcedTitle = '📢 تنبيه من إدارة الأبلكيشن';
+
+    if (clientRole === 'priest') {
+      enforcedRole = 'priest';
+      enforcedSenderName = 'قدس أبونا الكاهن';
+      enforcedType = 'priest_broadcast';
+      enforcedTitle = '✝️ رسالة من قدس أبونا';
+    } else if (clientRole === 'service_secretary') {
+      enforcedRole = 'service_secretary';
+      enforcedSenderName = 'أمين الخدمة';
+      enforcedType = 'general';
+      enforcedTitle = '📋 تنبيه من أمين الخدمة';
+    } else {
+      enforcedRole = 'admin';
+      enforcedSenderName = 'إدارة الأبلكيشن';
+      enforcedType = 'general';
+      enforcedTitle = '📢 تنبيه من إدارة الأبلكيشن';
+    }
+
     if (isNeonConfigured()) {
-      const title = senderRole === 'priest' ? '✝️ رسالة من قدس أبونا' : '📢 تنبيه من إدارة الخدمة';
       const notif = await createNotificationPg({
         target_type: 'all',
         sender_id: body.senderId || null,
-        sender_name: senderName,
-        sender_role: senderRole,
-        title: title,
+        sender_name: enforcedSenderName,
+        sender_role: enforcedRole,
+        title: enforcedTitle,
         message: message,
-        type: senderRole === 'priest' ? 'priest_broadcast' : 'general',
+        type: enforcedType,
       });
 
       // Deliver lock-screen push notification to all servants
       sendPushToAllPg({
-        title: `${title} — مارجرجس سندبيس`,
+        title: `${enforcedTitle} — مارجرجس سندبيس`,
         body: message,
         url: '/alerts',
         tag: 'church-broadcast',

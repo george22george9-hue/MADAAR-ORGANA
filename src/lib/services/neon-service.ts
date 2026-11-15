@@ -454,6 +454,37 @@ export async function getFamilyByIdPg(id: string): Promise<Family | null> {
   return row ? { ...row, leader_name: row.leader_name || null, leader_phone: row.leader_phone || null } : null;
 }
 
+export async function updateFamilyPg(
+  id: string,
+  data: Partial<Family> & { leader_id?: string }
+): Promise<Family | null> {
+  await queryPg(`
+    UPDATE families SET
+      name = COALESCE($1, name),
+      type = COALESCE($2, type),
+      color_code = COALESCE($3, color_code),
+      description = COALESCE($4, description),
+      meeting_day = COALESCE($5, meeting_day),
+      meeting_time = COALESCE($6, meeting_time),
+      location = COALESCE($7, location),
+      leader_id = COALESCE($8, leader_id),
+      updated_at = now()
+    WHERE id = $9
+  `, [
+    data.name || null,
+    data.type || null,
+    data.color_code || null,
+    data.description || null,
+    data.meeting_day || null,
+    data.meeting_time || null,
+    data.location || null,
+    data.leader_id || null,
+    id,
+  ]);
+
+  return getFamilyByIdPg(id);
+}
+
 // --------------------------------------------------------------------
 // 5. Servants Management
 // --------------------------------------------------------------------
@@ -951,6 +982,70 @@ export async function createMeetingPg(data: {
   };
 }
 
+export async function getMeetingByIdPg(id: string): Promise<Meeting | null> {
+  const row = await queryOnePg(`
+    SELECT m.*, f.name as family_name, f.color_code as family_color
+    FROM meetings m
+    JOIN families f ON m.family_id = f.id
+    WHERE m.id = $1
+  `, [id]);
+
+  if (!row) return null;
+
+  return {
+    ...row,
+    date: row.date instanceof Date ? row.date.toISOString().split('T')[0] : String(row.date).split('T')[0],
+  };
+}
+
+export async function updateMeetingPg(
+  id: string,
+  data: {
+    title?: string;
+    date?: string;
+    lesson_title?: string;
+    lesson_topic?: string;
+    start_time?: string;
+    end_time?: string;
+    status?: string;
+    notes?: string;
+    family_id?: string;
+  }
+): Promise<Meeting | null> {
+  const existing = await queryOnePg(`SELECT * FROM meetings WHERE id = $1`, [id]);
+  if (!existing) return null;
+
+  const dateStr = data.date ? String(data.date).split('T')[0] : existing.date;
+
+  await queryPg(`
+    UPDATE meetings SET
+      title = COALESCE($1, title),
+      date = COALESCE($2, date),
+      lesson_title = COALESCE($3, lesson_title),
+      lesson_topic = COALESCE($4, lesson_topic),
+      start_time = COALESCE($5, start_time),
+      end_time = COALESCE($6, end_time),
+      status = COALESCE($7, status),
+      notes = COALESCE($8, notes),
+      family_id = COALESCE($9, family_id),
+      updated_at = now()
+    WHERE id = $10
+  `, [
+    data.title || null,
+    dateStr,
+    data.lesson_title || null,
+    data.lesson_topic || null,
+    data.start_time || null,
+    data.end_time || null,
+    data.status || null,
+    data.notes || null,
+    data.family_id || null,
+    id,
+  ]);
+
+  return getMeetingByIdPg(id);
+}
+
 export async function getMeetingAttendancePg(meetingId: string): Promise<{
   members: any[];
   servants: any[];
@@ -1306,7 +1401,101 @@ export async function sendServantAbsenceNotificationPg(servantId: string): Promi
 }
 
 // --------------------------------------------------------------------
-// 10. High-Performance Dashboard Aggregations
+// 10. Weekly Reports (الكشاكيل)
+// --------------------------------------------------------------------
+export async function getWeeklyReportsPg(filters?: { familyId?: string; status?: string }): Promise<any[]> {
+  let sql = `
+    SELECT wr.*, f.name as family_name, f.color_code as family_color
+    FROM weekly_reports wr
+    JOIN families f ON wr.family_id = f.id
+    WHERE 1=1
+  `;
+  const params: any[] = [];
+  if (filters?.familyId) {
+    params.push(filters.familyId);
+    sql += ` AND wr.family_id = $${params.length}`;
+  }
+  if (filters?.status) {
+    params.push(filters.status);
+    sql += ` AND wr.status = $${params.length}`;
+  }
+  sql += ` ORDER BY wr.meeting_date DESC, wr.created_at DESC`;
+
+  const rows = await queryPg(sql, params);
+  return rows.map(r => ({
+    ...r,
+    meeting_date: r.meeting_date instanceof Date ? r.meeting_date.toISOString().split('T')[0] : String(r.meeting_date || '').split('T')[0],
+  }));
+}
+
+export async function getWeeklyReportByIdPg(id: string): Promise<any | null> {
+  const row = await queryOnePg(`
+    SELECT wr.*, f.name as family_name, f.color_code as family_color
+    FROM weekly_reports wr
+    JOIN families f ON wr.family_id = f.id
+    WHERE wr.id = $1
+  `, [id]);
+  if (!row) return null;
+  return {
+    ...row,
+    meeting_date: row.meeting_date instanceof Date ? row.meeting_date.toISOString().split('T')[0] : String(row.meeting_date || '').split('T')[0],
+  };
+}
+
+export async function updateWeeklyReportPg(id: string, data: any): Promise<any> {
+  await queryPg(`
+    UPDATE weekly_reports SET
+      lesson_title = COALESCE($1, lesson_title),
+      lesson_topic = COALESCE($2, lesson_topic),
+      opening_paragraph_notes = COALESCE($3, opening_paragraph_notes),
+      visual_aid_notes = COALESCE($4, visual_aid_notes),
+      workshop_notes = COALESCE($5, workshop_notes),
+      competition_notes = COALESCE($6, competition_notes),
+      general_notes = COALESCE($7, general_notes),
+      followup_requirements = COALESCE($8, followup_requirements),
+      updated_at = now()
+    WHERE id = $9
+  `, [
+    data.lesson_title ?? null,
+    data.lesson_topic ?? null,
+    data.opening_paragraph_notes ?? null,
+    data.visual_aid_notes ?? null,
+    data.workshop_notes ?? null,
+    data.competition_notes ?? null,
+    data.general_notes ?? null,
+    data.followup_requirements ?? null,
+    id,
+  ]);
+  return getWeeklyReportByIdPg(id);
+}
+
+export async function submitWeeklyReportPg(id: string, submitterName?: string): Promise<any> {
+  await queryPg(`
+    UPDATE weekly_reports SET
+      status = 'submitted',
+      submitted_at = now(),
+      submitted_by = COALESCE($1, submitted_by, 'أمين الأسرة'),
+      updated_at = now()
+    WHERE id = $2
+  `, [submitterName || null, id]);
+  return getWeeklyReportByIdPg(id);
+}
+
+export async function reviewWeeklyReportPg(id: string, status: string, reviewNotes?: string, reviewerName?: string): Promise<any> {
+  await queryPg(`
+    UPDATE weekly_reports SET
+      status = $1,
+      review_notes = COALESCE($2, review_notes),
+      reviewed_by = COALESCE($3, reviewed_by, 'أمين الخدمة'),
+      reviewed_at = now(),
+      updated_at = now()
+    WHERE id = $4
+  `, [status, reviewNotes || null, reviewerName || null, id]);
+  return getWeeklyReportByIdPg(id);
+}
+
+// --------------------------------------------------------------------
+// 11. High-Performance Dashboard Aggregations
 // --------------------------------------------------------------------
 export async function getDashboardDataPg() {
   const [fCount, sCount, mCount, mtgCount] = await Promise.all([

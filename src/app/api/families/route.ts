@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFamilies, createFamily, updateFamily } from '@/lib/services/organa-service';
-import { isNeonConfigured, getFamiliesPg } from '@/lib/services/neon-service';
+import { isNeonConfigured, getFamiliesPg, updateFamilyPg } from '@/lib/services/neon-service';
 import { INITIAL_PERSONAS } from '@/lib/constants/personas';
 import { UserRole } from '@/types/organa';
 
@@ -49,6 +49,11 @@ export async function PUT(request: NextRequest) {
     const { id, ...data } = body;
     const actorRole = (body.actorRole as UserRole) || 'priest';
     const actor = INITIAL_PERSONAS[actorRole];
+
+    if (isNeonConfigured()) {
+      const family = await updateFamilyPg(id, data);
+      return NextResponse.json({ success: true, family });
+    }
 
     const family = updateFamily(id, data, actor);
     return NextResponse.json({ success: true, family });

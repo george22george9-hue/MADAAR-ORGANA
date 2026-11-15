@@ -22,6 +22,7 @@ import {
   Radio,
   Smartphone,
   ShieldCheck,
+  Lock,
   Trash2,
   History,
   AlertCircle
@@ -49,10 +50,6 @@ export function BroadcastModal({ isOpen, onClose, onSuccess, initialTab = 'compo
   const isAdmin = currentRole === 'admin';
 
   const [activeTab, setActiveTab] = useState<'compose' | 'history'>(initialTab);
-  const [selectedSender, setSelectedSender] = useState<string>(
-    isPriest ? 'قدس أبونا الكاهن' : 'إدارة الأبلكيشن'
-  );
-  const [customSender, setCustomSender] = useState('');
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [successStatus, setSuccessStatus] = useState<string | null>(null);
@@ -86,8 +83,11 @@ export function BroadcastModal({ isOpen, onClose, onSuccess, initialTab = 'compo
 
   if (!isOpen) return null;
 
-  const senderName = selectedSender === 'custom' ? (customSender.trim() || 'إدارة الأبلكيشن') : selectedSender;
-  const isPriestSender = senderName.includes('أبونا') || senderName.includes('كاهن');
+  const senderName = isPriest
+    ? 'قدس أبونا الكاهن'
+    : currentRole === 'service_secretary'
+    ? 'أمين الخدمة'
+    : 'إدارة الأبلكيشن';
 
   const handleSend = async () => {
     if (!message.trim()) {
@@ -106,8 +106,7 @@ export function BroadcastModal({ isOpen, onClose, onSuccess, initialTab = 'compo
         body: JSON.stringify({
           action: 'broadcast',
           senderId: currentUser?.id,
-          senderName: senderName,
-          senderRole: isPriestSender ? 'priest' : 'admin',
+          senderRole: currentRole,
           message: message.trim(),
         }),
       });
@@ -220,50 +219,31 @@ export function BroadcastModal({ isOpen, onClose, onSuccess, initialTab = 'compo
         <div className="p-5 overflow-y-auto flex-1 space-y-4">
           {activeTab === 'compose' ? (
             <>
-              {/* Sender Identity Selector */}
-              <div>
-                <label className="block text-xs font-bold text-[#421923] mb-1.5">
-                  الإرسال باسم (هوية المرسل):
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedSender('إدارة الأبلكيشن')}
-                    className={`p-2 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                      selectedSender === 'إدارة الأبلكيشن'
-                        ? 'border-[#702C3B] bg-rose-50 text-[#702C3B] shadow-sm'
-                        : 'border-[#EAE3E4] bg-white text-[#81777A] hover:bg-gray-50'
-                    }`}
-                  >
-                    <Smartphone className="w-3.5 h-3.5" />
-                    <span>إدارة الأبلكيشن</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedSender('قدس أبونا الكاهن')}
-                    className={`p-2 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                      selectedSender === 'قدس أبونا الكاهن'
-                        ? 'border-amber-500 bg-amber-50 text-amber-900 shadow-sm'
-                        : 'border-[#EAE3E4] bg-white text-[#81777A] hover:bg-gray-50'
-                    }`}
-                  >
-                    <span>✝️ قدس أبونا</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedSender('أمين الخدمة')}
-                    className={`p-2 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                      selectedSender === 'أمين الخدمة'
-                        ? 'border-purple-500 bg-purple-50 text-purple-900 shadow-sm'
-                        : 'border-[#EAE3E4] bg-white text-[#81777A] hover:bg-gray-50'
-                    }`}
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>أمين الخدمة</span>
-                  </button>
+              {/* Sender Identity Card — Strictly Locked to Authenticated Role */}
+              <div className="bg-[#FAF5F6] border border-[#EAE3E4] rounded-xl p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-[#702C3B]/10 flex items-center justify-center text-[#702C3B] font-bold">
+                      {isPriest ? '✝️' : currentRole === 'service_secretary' ? <ShieldCheck className="w-4 h-4" /> : <Smartphone className="w-4 h-4" />}
+                    </div>
+                    <div>
+                      <span className="text-[11px] text-[#81777A] block font-medium">المرسل المعتمد للمنظومة:</span>
+                      <span className="text-xs font-bold text-[#421923] flex items-center gap-1.5">
+                        {senderName}
+                        {isPriest && <span className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded font-bold">راعٍ ومسؤول</span>}
+                        {isAdmin && <span className="text-[10px] bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded font-bold">إدارة النظام</span>}
+                        {currentRole === 'service_secretary' && <span className="text-[10px] bg-purple-100 text-purple-900 px-1.5 py-0.5 rounded font-bold">أمانة الخدمة</span>}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
+                    <Lock className="w-3 h-3 text-emerald-600" />
+                    <span>موثق تلقائياً 🔒</span>
+                  </div>
                 </div>
+                <p className="text-[10px] text-[#81777A] mt-2 border-t border-[#EAE3E4]/70 pt-1.5 leading-relaxed">
+                  يتم توثيق الرسالة وإرسالها حصرياً باسم صفحتك وصلاحيتك، وممنوع نهائياً الإرسال باسم حساب آخر لضمان الشفافية والمصداقية.
+                </p>
               </div>
 
               {/* Quick Presets */}
@@ -276,10 +256,7 @@ export function BroadcastModal({ isOpen, onClose, onSuccess, initialTab = 'compo
                     <button
                       key={idx}
                       type="button"
-                      onClick={() => {
-                        setMessage(preset.text);
-                        if (preset.sender) setSelectedSender(preset.sender);
-                      }}
+                      onClick={() => setMessage(preset.text)}
                       className="text-right p-2.5 rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] hover:bg-rose-50/80 hover:border-[#702C3B]/30 text-xs text-[#421923] font-medium transition-all"
                     >
                       {preset.label}: <span className="font-bold text-[#702C3B]">{preset.text}</span>
