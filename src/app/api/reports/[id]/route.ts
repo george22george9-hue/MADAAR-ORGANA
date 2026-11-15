@@ -5,8 +5,8 @@
 // ====================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getWeeklyReportById } from '@/lib/services/organa-service';
-import { isNeonConfigured, getWeeklyReportByIdPg } from '@/lib/services/neon-service';
+import { getWeeklyReportById, updateWeeklyReport } from '@/lib/services/organa-service';
+import { isNeonConfigured, getWeeklyReportByIdPg, updateWeeklyReportPg } from '@/lib/services/neon-service';
 import { INITIAL_PERSONAS } from '@/lib/constants/personas';
 import { UserRole } from '@/types/organa';
 
@@ -36,6 +36,27 @@ export async function GET(
     if (!report) {
       return NextResponse.json({ success: false, error: 'Report not found' }, { status: 404 });
     }
+    return NextResponse.json({ success: true, report });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const body = await request.json();
+    const actorRole = (body.actorRole as UserRole) || 'family_leader';
+    const actor = INITIAL_PERSONAS[actorRole];
+
+    if (isNeonConfigured()) {
+      const report = await updateWeeklyReportPg(params.id, body);
+      return NextResponse.json({ success: true, report });
+    }
+
+    const report = updateWeeklyReport(params.id, body, actor);
     return NextResponse.json({ success: true, report });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
