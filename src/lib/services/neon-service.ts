@@ -139,6 +139,8 @@ export async function createUserPg(data: {
 }
 
 export async function updateUserPg(id: string, updates: Partial<ChurchUser>): Promise<ChurchUser> {
+  const oldUser = await getUserByIdPg(id);
+
   await queryPg(`
     UPDATE users
     SET full_name = COALESCE($1, full_name),
@@ -160,6 +162,28 @@ export async function updateUserPg(id: string, updates: Partial<ChurchUser>): Pr
     updates.is_active !== undefined ? updates.is_active : null,
     id,
   ]);
+
+  // Synchronize servant record automatically whenever user full_name or phone is edited
+  if (updates.full_name || updates.phone || updates.confession_father || updates.is_active !== undefined) {
+    await queryPg(`
+      UPDATE servants
+      SET full_name = COALESCE($1, full_name),
+          phone = COALESCE($2, phone),
+          confession_father = COALESCE($3, confession_father),
+          is_active = COALESCE($4, is_active),
+          user_id = $5,
+          updated_at = now()
+      WHERE user_id = $5 OR phone = $6 OR (phone = $2 AND $2 IS NOT NULL)
+    `, [
+      updates.full_name ?? null,
+      updates.phone ?? null,
+      updates.confession_father ?? null,
+      updates.is_active !== undefined ? updates.is_active : null,
+      id,
+      oldUser?.phone || null,
+    ]);
+  }
+
   return (await getUserByIdPg(id))!;
 }
 
@@ -523,8 +547,13 @@ export async function updateFamilyPg(
 // --------------------------------------------------------------------
 export async function getServantsPg(familyId?: string): Promise<Servant[]> {
   let sql = `
-    SELECT s.*, fs.family_id, fs.role_in_family, f.name as family_name
+    SELECT s.*, 
+           COALESCE(u.full_name, s.full_name) as full_name,
+           COALESCE(u.phone, s.phone) as phone,
+           COALESCE(u.confession_father, s.confession_father) as confession_father,
+           fs.family_id, fs.role_in_family, f.name as family_name
     FROM servants s
+    LEFT JOIN users u ON (s.user_id = u.id OR s.phone = u.phone)
     LEFT JOIN family_servants fs ON s.id = fs.servant_id
     LEFT JOIN families f ON fs.family_id = f.id
   `;
@@ -533,7 +562,7 @@ export async function getServantsPg(familyId?: string): Promise<Servant[]> {
     sql += ` WHERE fs.family_id = $1`;
     params.push(familyId);
   }
-  sql += ` ORDER BY s.full_name ASC`;
+  sql += ` ORDER BY COALESCE(u.full_name, s.full_name) ASC`;
 
   const rows = await queryPg(sql, params);
   return rows.map(r => ({
@@ -576,9 +605,9 @@ export async function getServantsPastoralOverviewPg(familyId?: string): Promise<
   let sql = `
     SELECT 
       s.id,
-      s.full_name,
-      s.phone,
-      s.confession_father,
+      COALESCE(u.full_name, s.full_name) as full_name,
+      COALESCE(u.phone, s.phone) as phone,
+      COALESCE(u.confession_father, s.confession_father) as confession_father,
       COALESCE(fs.role_in_family, 'خادم') as role_in_family,
       COALESCE(fs.family_id, 'fam-eb') as family_id,
       COALESCE(f.name, 'غير محدد') as family_name,
@@ -590,6 +619,7 @@ export async function getServantsPastoralOverviewPg(familyId?: string): Promise<
       latest_att.excuse_reason,
       latest_att.meeting_date
     FROM servants s
+    LEFT JOIN users u ON (s.user_id = u.id OR s.phone = u.phone)
     LEFT JOIN family_servants fs ON s.id = fs.servant_id
     LEFT JOIN families f ON fs.family_id = f.id
     LEFT JOIN LATERAL (
@@ -694,6 +724,8 @@ export async function createServantPg(data: {
 }
 
 export async function updateServantPg(id: string, data: Partial<Servant> & { family_id?: string; role_in_family?: string }): Promise<Servant> {
+  const oldServant = await queryOnePg(`SELECT * FROM servants WHERE id = $1`, [id]);
+
   await queryPg(`
     UPDATE servants
     SET full_name = COALESCE($1, full_name),
@@ -715,6 +747,26 @@ export async function updateServantPg(id: string, data: Partial<Servant> & { fam
     data.is_active !== undefined ? data.is_active : null,
     id,
   ]);
+
+  // Synchronize user account whenever servant full_name or phone is edited
+  if (data.full_name || data.phone || data.confession_father || data.is_active !== undefined) {
+    await queryPg(`
+      UPDATE users
+      SET full_name = COALESCE($1, full_name),
+          phone = COALESCE($2, phone),
+          confession_father = COALESCE($3, confession_father),
+          is_active = COALESCE($4, is_active),
+          updated_at = now()
+      WHERE id = $5 OR phone = $6 OR (phone = $2 AND $2 IS NOT NULL)
+    `, [
+      data.full_name ?? null,
+      data.phone ?? null,
+      data.confession_father ?? null,
+      data.is_active !== undefined ? data.is_active : null,
+      oldServant?.user_id || null,
+      oldServant?.phone || null,
+    ]);
+  }
 
   if (data.family_id) {
     const fsId = `fs-${data.family_id}-${id}`;

@@ -6,6 +6,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useAuth } from '@/lib/context/auth-context';
 import {
   CalendarCheck,
   BookOpen,
@@ -14,11 +15,13 @@ import {
   Clock,
   CheckCircle2,
   ExternalLink,
-  ChevronLeft
+  ChevronLeft,
+  MessageCircle
 } from 'lucide-react';
 import { PriestServantsReport } from '@/components/dashboard/PriestServantsReport';
 
 export function SecretaryDashboard() {
+  const { currentUser } = useAuth();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [reviewModalReport, setReviewModalReport] = useState<any>(null);
@@ -78,9 +81,26 @@ export function SecretaryDashboard() {
     <div className="space-y-5 max-w-4xl mx-auto pb-24">
       {/* Header */}
       <div className="bg-gradient-to-l from-[#5A1E2D] to-[#421923] text-white rounded-2xl p-5 shadow-md">
-        <div className="text-xs text-white/70 mb-1">أمين الخدمة</div>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="text-xs text-white/80">أمين الخدمة • {currentUser?.full_name}</div>
+          <a
+            href={`https://wa.me/201202074649?text=${encodeURIComponent(
+              `بتواصل معاك بخصوص منظومة اورجانا الكنسية انا (${currentUser?.full_name || 'أمين الخدمة'})`
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 active:scale-95 text-emerald-200 border border-emerald-400/40 text-[11px] font-bold transition-all shadow-sm backdrop-blur-sm"
+            title="تواصل مع المطور على واتساب"
+          >
+            <MessageCircle className="w-3.5 h-3.5 text-emerald-300" />
+            <span>تواصل مع المطور 💬</span>
+          </a>
+        </div>
         <h1 className="text-lg font-bold">متابعة الكشاكيل والخدام</h1>
-        <p className="text-[11px] text-white/70 mt-1">مارجرجس بسندبيس</p>
+        <div className="mt-2.5 pt-2 border-t border-white/10 flex flex-col gap-0.5">
+          <span className="text-[11px] text-white/80 font-medium">مطرانية شبرا الخيمة وتوابعها</span>
+          <span className="text-xs text-amber-200 font-bold">كنيسة الشهيد العظيم مارجرجس بسندبيس</span>
+        </div>
       </div>
 
       {/* Quick Actions */}
@@ -159,8 +179,21 @@ export function SecretaryDashboard() {
       <PriestServantsReport />
 
       {/* Footer */}
-      <div className="text-center pt-2 pb-4">
-        <div className="text-[10px] text-[#81777A]">منظومة أورجانا • MADAAR Technologies</div>
+      <div className="text-center pt-3 pb-6 flex flex-col items-center gap-2">
+        <a
+          href={`https://wa.me/201202074649?text=${encodeURIComponent(
+            `بتواصل معاك بخصوص منظومة اورجانا الكنسية انا (${currentUser?.full_name || 'أمين الخدمة'})`
+          )}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-bold transition-all shadow-sm active:scale-95"
+        >
+          <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+          <span>تواصل مع المطور (واتساب 01202074649) 💬</span>
+        </a>
+        <div className="text-[10px] text-[#81777A]">
+          منظومة أورجانا • MADAAR Technologies • مطرانية شبرا الخيمة وتوابعها
+        </div>
       </div>
 
       {/* Review Modal */}
