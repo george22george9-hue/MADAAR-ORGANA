@@ -22,7 +22,12 @@ import { PriestServantsReport } from '@/components/dashboard/PriestServantsRepor
 
 export function SecretaryDashboard() {
   const { currentUser } = useAuth();
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<any>({
+    pendingReports: [],
+    approvedReports: 0,
+    servantsCount: 0,
+    notebookFollowup: [],
+  });
   const [loading, setLoading] = useState(true);
   const [reviewModalReport, setReviewModalReport] = useState<any>(null);
   const [reviewNotes, setReviewNotes] = useState('');
@@ -32,10 +37,15 @@ export function SecretaryDashboard() {
     fetch('/api/dashboard?role=service_secretary')
       .then(r => r.json())
       .then(res => {
-        if (res.success) setData(res.data);
+        if (res && res.success && res.data) {
+          setData(res.data);
+        }
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((err) => {
+        console.error('Failed to load secretary dashboard:', err);
+        setLoading(false);
+      });
   };
 
   useEffect(() => {
@@ -68,15 +78,6 @@ export function SecretaryDashboard() {
     }
   };
 
-  if (loading || !data) {
-    return (
-      <div className="space-y-4 animate-pulse max-w-lg mx-auto">
-        <div className="h-24 bg-white rounded-2xl border border-[#EAE3E4]"></div>
-        <div className="h-48 bg-white rounded-2xl border border-[#EAE3E4]"></div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-5 max-w-4xl mx-auto pb-24">
       {/* Header */}
@@ -97,9 +98,13 @@ export function SecretaryDashboard() {
           </a>
         </div>
         <h1 className="text-lg font-bold">متابعة الكشاكيل والخدام</h1>
-        <div className="mt-2.5 pt-2 border-t border-white/10 flex flex-col gap-0.5">
-          <span className="text-[11px] text-white/80 font-medium">مطرانية شبرا الخيمة وتوابعها</span>
-          <span className="text-xs text-amber-200 font-bold">كنيسة الشهيد العظيم مارجرجس بسندبيس</span>
+        <div className="mt-3 pt-2.5 border-t border-white/15 flex flex-col gap-0.5">
+          <span className="text-xs text-white/90 font-bold tracking-wide">
+            مطرانية شبرا الخيمة وتوابعها
+          </span>
+          <span className="text-sm text-amber-300 font-extrabold tracking-wide">
+            كنيسة الشهيد العظيم مارجرجس بسندبيس
+          </span>
         </div>
       </div>
 

@@ -19,24 +19,32 @@ import {
 
 export function ServantDashboard() {
   const { currentUser, assignedFamilyId } = useAuth();
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<any>({
+    assignedMembers: [],
+    pendingTasks: [],
+  });
   const [loading, setLoading] = useState(true);
 
   const loadData = () => {
-    const sId = currentUser.id || '';
+    const sId = currentUser?.id || '';
     const fId = assignedFamilyId || '';
     fetch(`/api/dashboard?role=servant&servantId=${sId}&familyId=${fId}`)
       .then(r => r.json())
       .then(res => {
-        if (res.success) setData(res.data);
+        if (res && res.success && res.data) {
+          setData(res.data);
+        }
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((err) => {
+        console.error('Failed to load servant dashboard:', err);
+        setLoading(false);
+      });
   };
 
   useEffect(() => {
     loadData();
-  }, [currentUser.id, assignedFamilyId]);
+  }, [currentUser?.id, assignedFamilyId]);
 
   const handleCompleteTask = async (taskId: string) => {
     try {
@@ -56,20 +64,8 @@ export function ServantDashboard() {
     }
   };
 
-  if (loading || !data) {
-    return (
-      <div className="space-y-4 animate-pulse max-w-lg mx-auto">
-        <div className="h-24 bg-white rounded-2xl border border-[#EAE3E4]"></div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="h-24 bg-white rounded-2xl border border-[#EAE3E4]"></div>
-          <div className="h-24 bg-white rounded-2xl border border-[#EAE3E4]"></div>
-        </div>
-      </div>
-    );
-  }
-
-  const members = data.assignedMembers || [];
-  const tasks = data.pendingTasks || [];
+  const members = data?.assignedMembers || [];
+  const tasks = data?.pendingTasks || [];
 
   return (
     <div className="space-y-4 max-w-lg mx-auto pb-24">
@@ -90,10 +86,14 @@ export function ServantDashboard() {
             <span>تواصل مع المطور 💬</span>
           </a>
         </div>
-        <h1 className="text-xl font-bold">{currentUser.full_name}</h1>
-        <div className="mt-2.5 pt-2 border-t border-white/10 flex flex-col gap-0.5">
-          <span className="text-[11px] text-white/80 font-medium">مطرانية شبرا الخيمة وتوابعها</span>
-          <span className="text-xs text-amber-200 font-bold">كنيسة الشهيد العظيم مارجرجس بسندبيس</span>
+        <h1 className="text-xl font-bold">{currentUser?.full_name || 'خادم'}</h1>
+        <div className="mt-3 pt-2.5 border-t border-white/15 flex flex-col gap-0.5">
+          <span className="text-xs text-white/90 font-bold tracking-wide">
+            مطرانية شبرا الخيمة وتوابعها
+          </span>
+          <span className="text-sm text-amber-300 font-extrabold tracking-wide">
+            كنيسة الشهيد العظيم مارجرجس بسندبيس
+          </span>
         </div>
       </div>
 

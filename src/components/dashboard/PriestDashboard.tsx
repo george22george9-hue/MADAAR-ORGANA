@@ -24,31 +24,30 @@ import { PriestServantsReport } from '@/components/dashboard/PriestServantsRepor
 
 export function PriestDashboard() {
   const { currentRole, currentUser } = useAuth();
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<any>({
+    servantsCount: 0,
+    membersCount: 0,
+    submittedReports: 0,
+    alertsCount: 0,
+    familyStats: [],
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/dashboard?role=priest')
+    const roleParam = currentRole === 'admin' ? 'admin' : 'priest';
+    fetch(`/api/dashboard?role=${roleParam}`)
       .then(r => r.json())
       .then(res => {
-        if (res.success) setData(res.data);
+        if (res && res.success && res.data) {
+          setData(res.data);
+        }
         setLoading(false);
       })
-      .catch(() => setLoading(false));
-  }, []);
-
-  if (loading || !data) {
-    return (
-      <div className="space-y-4 max-w-lg mx-auto animate-pulse pb-20">
-        <div className="h-32 bg-white rounded-2xl border border-[#EAE3E4]"></div>
-        <div className="grid grid-cols-2 gap-3">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="h-20 bg-white rounded-2xl border border-[#EAE3E4]"></div>
-          ))}
-        </div>
-      </div>
-    );
-  }
+      .catch((err) => {
+        console.error('Failed to load dashboard:', err);
+        setLoading(false);
+      });
+  }, [currentRole]);
 
   const roleLabel = currentRole === 'admin' ? 'إدارة المنظومة' : 'الكاهن';
 
@@ -81,9 +80,13 @@ export function PriestDashboard() {
           لوحة المتابعة الشاملة
         </h1>
 
-        <div className="mt-2.5 pt-2 border-t border-white/10 flex flex-col gap-0.5">
-          <span className="text-[11px] text-white/80 font-medium">مطرانية شبرا الخيمة وتوابعها</span>
-          <span className="text-xs text-amber-200 font-bold">كنيسة الشهيد العظيم مارجرجس بسندبيس</span>
+        <div className="mt-3 pt-2.5 border-t border-white/15 flex flex-col gap-0.5">
+          <span className="text-xs text-white/90 font-bold tracking-wide">
+            مطرانية شبرا الخيمة وتوابعها
+          </span>
+          <span className="text-sm text-amber-300 font-extrabold tracking-wide">
+            كنيسة الشهيد العظيم مارجرجس بسندبيس
+          </span>
         </div>
       </div>
 

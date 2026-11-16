@@ -78,10 +78,12 @@ export function PriestServantsReport() {
     loadData();
   }, []);
 
-  const filteredServants = servants.filter(s => {
-    const matchesSearch =
-      s.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.family_name.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredServants = (servants || []).filter(s => {
+    if (!s) return false;
+    const sName = String(s.full_name || '').toLowerCase();
+    const fName = String(s.family_name || '').toLowerCase();
+    const q = (searchQuery || '').toLowerCase().trim();
+    const matchesSearch = !q || sName.includes(q) || fName.includes(q);
 
     if (!matchesSearch) return false;
 
@@ -98,15 +100,19 @@ export function PriestServantsReport() {
   });
 
   const handleWhatsApp = (s: ServantReportItem) => {
-    let msg = `سلام ونعمة يا أستاذ ${s.full_name}.. صلوات قدس أبونا وإدارة الخدمة معك، بنصلي تكون بكل خير.`;
+    if (!s) return;
+    const sName = s.full_name || 'الخادم';
+    let msg = `سلام ونعمة يا أستاذ ${sName}.. صلوات قدس أبونا وإدارة الخدمة معك، بنصلي تكون بكل خير.`;
     if (s.status === 'absent') {
-      msg = `سلام ونعمة يا أستاذ ${s.full_name}.. افتقدناك في خدمة كنيسة مارجرجس بسندبيس، بنصلي تكون بكل خير وبانتظارك الجمعة القادمة! 🙏`;
+      msg = `سلام ونعمة يا أستاذ ${sName}.. افتقدناك في خدمة كنيسة مارجرجس بسندبيس، بنصلي تكون بكل خير وبانتظارك الجمعة القادمة! 🙏`;
     } else if (!s.prepared_notebook) {
-      msg = `سلام ونعمة يا أستاذ ${s.full_name}.. نرجو عدم نسيان تجهيز وتسليم كشكول اللقاء للأسبوع القادم لبركة الخدمة. 📓`;
+      msg = `سلام ونعمة يا أستاذ ${sName}.. نرجو عدم نسيان تجهيز وتسليم كشكول اللقاء للأسبوع القادم لبركة الخدمة. 📓`;
     }
-    const cleanPhone = s.phone.replace(/[^0-9]/g, '');
+    const cleanPhone = String(s.phone || '').replace(/[^0-9]/g, '');
     const finalPhone = cleanPhone.startsWith('0') ? `2${cleanPhone}` : cleanPhone;
-    window.open(`https://wa.me/${finalPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+    if (finalPhone) {
+      window.open(`https://wa.me/${finalPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+    }
   };
 
   return (

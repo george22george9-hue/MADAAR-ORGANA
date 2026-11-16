@@ -18,7 +18,14 @@ import {
 
 export function FamilyLeaderDashboard() {
   const { currentUser, assignedFamilyId } = useAuth();
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<any>({
+    family: null,
+    membersCount: 0,
+    servantsCount: 0,
+    meetingsCount: 0,
+    alerts: [],
+    reports: [],
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,26 +33,18 @@ export function FamilyLeaderDashboard() {
     fetch(`/api/dashboard?role=family_leader&familyId=${fId}`)
       .then(r => r.json())
       .then(res => {
-        if (res.success) setData(res.data);
+        if (res && res.success && res.data) {
+          setData(res.data);
+        }
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((err) => {
+        console.error('Failed to load leader dashboard:', err);
+        setLoading(false);
+      });
   }, [assignedFamilyId]);
 
-  if (loading || !data) {
-    return (
-      <div className="space-y-4 animate-pulse max-w-lg mx-auto">
-        <div className="h-24 bg-white rounded-2xl border border-[#EAE3E4]"></div>
-        <div className="grid grid-cols-2 gap-3">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="h-20 bg-white rounded-2xl border border-[#EAE3E4]"></div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  const fam = data.family;
+  const fam = data?.family;
 
   return (
     <div className="space-y-4 max-w-lg mx-auto pb-24">
@@ -70,9 +69,13 @@ export function FamilyLeaderDashboard() {
         <p className="text-[11px] text-white/80 mt-0.5">
           {fam?.meeting_day === 'Friday' ? 'الجمعة' : fam?.meeting_day} — {fam?.meeting_time}
         </p>
-        <div className="mt-2.5 pt-2 border-t border-white/10 flex flex-col gap-0.5">
-          <span className="text-[11px] text-white/80 font-medium">مطرانية شبرا الخيمة وتوابعها</span>
-          <span className="text-xs text-amber-200 font-bold">كنيسة الشهيد العظيم مارجرجس بسندبيس</span>
+        <div className="mt-3 pt-2.5 border-t border-white/15 flex flex-col gap-0.5">
+          <span className="text-xs text-white/90 font-bold tracking-wide">
+            مطرانية شبرا الخيمة وتوابعها
+          </span>
+          <span className="text-sm text-amber-300 font-extrabold tracking-wide">
+            كنيسة الشهيد العظيم مارجرجس بسندبيس
+          </span>
         </div>
       </div>
 
