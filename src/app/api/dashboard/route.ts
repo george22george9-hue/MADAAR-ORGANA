@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     const servantId = searchParams.get('servantId') || undefined;
 
     if (isNeonConfigured()) {
-      const data = await getDashboardDataPg();
+      const data = await getDashboardDataPg(role, familyId, servantId);
       return NextResponse.json({ success: true, data });
     }
 

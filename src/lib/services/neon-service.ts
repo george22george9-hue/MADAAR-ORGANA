@@ -454,6 +454,39 @@ export async function getFamilyByIdPg(id: string): Promise<Family | null> {
   return row ? { ...row, leader_name: row.leader_name || null, leader_phone: row.leader_phone || null } : null;
 }
 
+export async function createFamilyPg(data: {
+  name: string;
+  type: string;
+  leader_id?: string | null;
+  academic_year_id?: string;
+  meeting_day?: string;
+  meeting_time?: string;
+  location?: string;
+  description?: string;
+  color_code?: string;
+}): Promise<Family> {
+  const id = `fam-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const academicYearId = data.academic_year_id || 'ay-2026-2027';
+
+  await queryPg(`
+    INSERT INTO families (id, name, type, leader_id, academic_year_id, meeting_day, meeting_time, location, description, color_code, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now())
+  `, [
+    id,
+    data.name.trim(),
+    data.type || 'primary',
+    data.leader_id || null,
+    academicYearId,
+    data.meeting_day || 'Friday',
+    data.meeting_time || '17:00',
+    data.location || null,
+    data.description || null,
+    data.color_code || '#702C3B',
+  ]);
+
+  return (await getFamilyByIdPg(id))!;
+}
+
 export async function updateFamilyPg(
   id: string,
   data: Partial<Family> & { leader_id?: string }
@@ -1495,9 +1528,9 @@ export async function reviewWeeklyReportPg(id: string, status: string, reviewNot
 }
 
 // --------------------------------------------------------------------
-// 11. High-Performance Dashboard Aggregations
+// 11. High-Performance Dashboard Aggregations (Multi-Role Real-Time)
 // --------------------------------------------------------------------
-export async function getDashboardDataPg() {
+export async function getDashboardDataPg(role: string = 'admin', familyId?: string, servantId?: string) {
   const [fCount, sCount, mCount, mtgCount] = await Promise.all([
     queryOnePg<{ c: string }>(`SELECT COUNT(*) as c FROM families`),
     queryOnePg<{ c: string }>(`SELECT COUNT(*) as c FROM servants WHERE is_active = true`),
@@ -1509,11 +1542,13 @@ export async function getDashboardDataPg() {
     submitted: string;
     awaiting: string;
     approved: string;
+    returned: string;
   }>(`
     SELECT
       COUNT(CASE WHEN status IN ('submitted', 'under_review', 'approved') THEN 1 END) as submitted,
       COUNT(CASE WHEN status IN ('submitted', 'under_review') THEN 1 END) as awaiting,
-      COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved
+      COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved,
+      COUNT(CASE WHEN status = 'returned_for_corrections' THEN 1 END) as returned
     FROM weekly_reports
   `);
 
@@ -1548,7 +1583,111 @@ export async function getDashboardDataPg() {
     SELECT COUNT(*) as c FROM join_requests WHERE status = 'pending'
   `);
 
+  const alertsCount = await queryOnePg<{ c: string }>(`
+    SELECT COUNT(*) as c FROM absence_alerts WHERE status = 'pending_followup'
+  `);
+
+  // Pending reports for Secretary/Priest
+  const pendingReports = await queryPg(`
+    SELECT wr.*, f.name as family_name, wr.submitted_by as submitted_by_name
+    FROM weekly_reports wr
+    JOIN families f ON wr.family_id = f.id
+    WHERE wr.status IN ('submitted', 'under_review')
+    ORDER BY wr.submitted_at DESC NULLS LAST
+  `);
+
+  // Notebook followup per family for Secretary
+  const notebookFollowup = await queryPg(`
+    SELECT f.id as family_id, f.name as family_name, f.type,
+           u.full_name as leader_name,
+           (SELECT COUNT(*) FROM meetings m WHERE m.family_id = f.id) as meetings_count,
+           (SELECT COUNT(*) FROM weekly_reports wr WHERE wr.family_id = f.id AND wr.status = 'approved') as approved_count,
+           (SELECT COUNT(*) FROM weekly_reports wr WHERE wr.family_id = f.id AND wr.status IN ('submitted', 'under_review')) as pending_count,
+           (SELECT COUNT(*) FROM weekly_reports wr WHERE wr.family_id = f.id AND wr.status = 'returned_for_corrections') as returned_count,
+           (SELECT COUNT(*) FROM weekly_reports wr WHERE wr.family_id = f.id AND wr.status = 'draft') as draft_count,
+           (SELECT meeting_date FROM weekly_reports wr WHERE wr.family_id = f.id ORDER BY wr.meeting_date DESC LIMIT 1) as last_report_date
+    FROM families f
+    LEFT JOIN users u ON f.leader_id = u.id
+    ORDER BY f.id ASC
+  `);
+
+  // For family_leader specific queries:
+  let famData = null;
+  let latestMeeting = null;
+  let famMeetingsCount = 0;
+  let famReports: any[] = [];
+  let famAlerts: any[] = [];
+  let famServantsCount = 0;
+  let famMembersCount = 0;
+
+  if (role === 'family_leader') {
+    const targetFamilyId = familyId || (familyStats[0]?.id as string) || 'fam-prep-boys';
+    famData = await getFamilyByIdPg(targetFamilyId);
+    const mRows = await queryPg(`SELECT * FROM meetings WHERE family_id = $1 ORDER BY date DESC LIMIT 1`, [targetFamilyId]);
+    latestMeeting = mRows[0] || null;
+    const mCountRow = await queryOnePg<{ c: string }>(`SELECT COUNT(*) as c FROM meetings WHERE family_id = $1`, [targetFamilyId]);
+    famMeetingsCount = Number(mCountRow?.c || 0);
+    const sCountRow = await queryOnePg<{ c: string }>(`SELECT COUNT(*) as c FROM family_servants WHERE family_id = $1`, [targetFamilyId]);
+    famServantsCount = Number(sCountRow?.c || 0);
+    const memCountRow = await queryOnePg<{ c: string }>(`SELECT COUNT(*) as c FROM served_members WHERE current_family_id = $1 AND is_active = true`, [targetFamilyId]);
+    famMembersCount = Number(memCountRow?.c || 0);
+    famReports = await queryPg(`SELECT * FROM weekly_reports WHERE family_id = $1 ORDER BY meeting_date DESC LIMIT 10`, [targetFamilyId]);
+    famAlerts = await queryPg(`SELECT * FROM absence_alerts WHERE family_id = $1 AND status = 'pending_followup'`, [targetFamilyId]);
+  }
+
+  // For servant specific queries:
+  let assignedMembers: any[] = [];
+  let pendingTasks: any[] = [];
+  if (role === 'servant' && servantId) {
+    assignedMembers = await queryPg(`SELECT * FROM served_members WHERE assigned_servant_id = $1 AND is_active = true`, [servantId]);
+    pendingTasks = await queryPg(`SELECT * FROM followup_tasks WHERE assigned_to = $1 AND is_completed = false`, [servantId]);
+  }
+
+  const formattedFamilyStats = familyStats.map(f => ({
+    ...f,
+    members_count: Number(f.members_count || 0),
+    servants_count: Number(f.servants_count || 0),
+    approved_reports: Number(f.approved_reports || 0),
+  }));
+
   return {
+    // Top-level stats for PriestDashboard, AdminDashboard, SecretaryDashboard
+    servantsCount: role === 'family_leader' ? famServantsCount : Number(sCount?.c || 0),
+    membersCount: role === 'family_leader' ? famMembersCount : Number(mCount?.c || 0),
+    familiesCount: Number(fCount?.c || 10),
+    totalMeetings: Number(mtgCount?.c || 520),
+    submittedReports: Number(reports?.submitted || 0),
+    awaitingReview: Number(reports?.awaiting || 0),
+    returnedReports: Number(reports?.returned || 0),
+    approvedReports: Number(reports?.approved || 0),
+    alertsCount: Number(alertsCount?.c || 0),
+    attendanceRate,
+    presentCount: present,
+    absentCount: absent,
+    excusedCount: excused,
+    familyStats: formattedFamilyStats,
+    pendingReports: pendingReports.map(r => ({
+      ...r,
+      meeting_date: r.meeting_date instanceof Date ? r.meeting_date.toISOString().split('T')[0] : String(r.meeting_date || '').split('T')[0],
+    })),
+    notebookFollowup,
+    recentLogs: [],
+
+    // Family leader specific
+    family: famData,
+    latestMeeting: latestMeeting ? {
+      ...latestMeeting,
+      date: latestMeeting.date instanceof Date ? latestMeeting.date.toISOString().split('T')[0] : String(latestMeeting.date || '').split('T')[0],
+    } : null,
+    meetingsCount: famMeetingsCount,
+    reports: famReports,
+    alerts: famAlerts,
+
+    // Servant specific
+    assignedMembers,
+    pendingTasks,
+
+    // Nested compatibility structures
     overview: {
       familiesCount: Number(fCount?.c || 10),
       servantsCount: Number(sCount?.c || 0),
@@ -1562,7 +1701,7 @@ export async function getDashboardDataPg() {
       submittedReports: Number(reports?.submitted || 0),
       awaitingReview: Number(reports?.awaiting || 0),
       approvedReports: Number(reports?.approved || 0),
-      returnedReports: 0,
+      returnedReports: Number(reports?.returned || 0),
       completionRate: Number(reports?.submitted || 0) > 0 ? 100 : 0,
     },
     attendanceStats: {
@@ -1572,13 +1711,46 @@ export async function getDashboardDataPg() {
       excused,
       rate: attendanceRate,
     },
-    familyBreakdown: familyStats.map(f => ({
-      ...f,
-      members_count: Number(f.members_count || 0),
-      servants_count: Number(f.servants_count || 0),
-      approved_reports: Number(f.approved_reports || 0),
-    })),
+    familyBreakdown: formattedFamilyStats,
     recentAlerts: [],
     recentActivities: [],
   };
+}
+
+// --------------------------------------------------------------------
+// 12. Followup Tasks Management
+// --------------------------------------------------------------------
+export async function getFollowupTasksPg(servantId?: string): Promise<any[]> {
+  let sql = `
+    SELECT ft.*, sm.full_name as member_name, sm.phone as member_phone,
+           sm.guardian_name, sm.guardian_phone
+    FROM followup_tasks ft
+    LEFT JOIN served_members sm ON ft.member_id = sm.id
+    WHERE 1=1
+  `;
+  const params: any[] = [];
+  if (servantId) {
+    params.push(servantId);
+    sql += ` AND ft.assigned_to = $${params.length}`;
+  }
+  sql += ` ORDER BY ft.created_at DESC`;
+  return queryPg(sql, params);
+}
+
+export async function completeFollowupTaskPg(
+  taskId: string,
+  result: string,
+  notes?: string,
+  actorName?: string
+): Promise<boolean> {
+  await queryPg(`
+    UPDATE followup_tasks SET
+      is_completed = true,
+      completed_at = now(),
+      outcome = $1,
+      notes = COALESCE($2, notes),
+      updated_at = now()
+    WHERE id = $3
+  `, [result, notes || null, taskId]);
+  return true;
 }
