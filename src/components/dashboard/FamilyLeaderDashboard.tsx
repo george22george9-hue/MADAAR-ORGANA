@@ -50,21 +50,7 @@ export function FamilyLeaderDashboard() {
     <div className="space-y-4 max-w-lg mx-auto pb-24">
       {/* Header */}
       <div className="bg-gradient-to-l from-[#702C3B] to-[#421923] text-white rounded-2xl p-5 shadow-md">
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <div className="text-xs text-white/80">{currentUser?.full_name} • أمين أسرة</div>
-          <a
-            href={`https://wa.me/201202074649?text=${encodeURIComponent(
-              `بتواصل معاك بخصوص منظومة اورجانا الكنسية انا (${currentUser?.full_name || 'أمين أسرة'})`
-            )}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 active:scale-95 text-emerald-200 border border-emerald-400/40 text-[11px] font-bold transition-all shadow-sm backdrop-blur-sm"
-            title="تواصل مع المطور على واتساب"
-          >
-            <MessageCircle className="w-3.5 h-3.5 text-emerald-300" />
-            <span>تواصل مع المطور 💬</span>
-          </a>
-        </div>
+        <div className="text-xs text-white/80 mb-2">{currentUser?.full_name} • أمين أسرة</div>
         <h1 className="text-lg font-bold">أسرة {fam?.name}</h1>
         <p className="text-[11px] text-white/80 mt-0.5">
           {fam?.meeting_day === 'Friday' ? 'الجمعة' : fam?.meeting_day} — {fam?.meeting_time}
@@ -166,7 +152,7 @@ export function FamilyLeaderDashboard() {
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-bold transition-all shadow-sm active:scale-95"
         >
           <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-          <span>تواصل مع المطور (واتساب 01202074649) 💬</span>
+          <span>تواصل مع المطور عبر واتساب 💬</span>
         </a>
         <div className="text-[10px] text-[#81777A]">
           منظومة أورجانا • MADAAR Technologies • مطرانية شبرا الخيمة وتوابعها

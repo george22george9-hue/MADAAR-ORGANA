@@ -66,13 +66,16 @@ export async function POST(request: NextRequest) {
       const senderName = body.senderName || 'إدارة الأبلكيشن';
       if (isNeonConfigured()) {
         const notif = await sendTuesdayNotebookReminderPg(senderName);
-        // Deliver lock-screen push notification to all servants
-        sendPushToAllPg({
-          title: '📓 كشكول الخدمة — مارجرجس سندبيس',
-          body: notif.message,
-          url: '/notebooks',
-          tag: 'tuesday-prep',
-        }).catch(console.error);
+        // Deliver lock-screen push notification only if fresh (created in the last 60 seconds)
+        const isFresh = notif.created_at && (Date.now() - new Date(notif.created_at).getTime() < 60000);
+        if (isFresh) {
+          sendPushToAllPg({
+            title: '📓 كشكول الخدمة — مارجرجس سندبيس',
+            body: notif.message,
+            url: '/notebooks',
+            tag: 'tuesday-prep',
+          }).catch(console.error);
+        }
         return NextResponse.json({ success: true, notification: notif });
       }
       return NextResponse.json({ success: true });

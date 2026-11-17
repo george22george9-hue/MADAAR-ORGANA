@@ -1445,6 +1445,17 @@ export async function deleteNotificationPg(id: string): Promise<boolean> {
 }
 
 export async function sendTuesdayNotebookReminderPg(senderName: string = 'إدارة الأبلكيشن'): Promise<ChurchNotification> {
+  // Server-side Deduplication: Ensure only ONE Tuesday reminder exists per week (last 5 days)
+  const existing = await queryOnePg<ChurchNotification>(`
+    SELECT * FROM notifications 
+    WHERE type = 'tuesday_prep' AND created_at >= (now() - interval '5 days')
+    ORDER BY created_at DESC 
+    LIMIT 1
+  `);
+  if (existing) {
+    return existing;
+  }
+
   return createNotificationPg({
     target_type: 'all',
     sender_name: senderName,

@@ -82,21 +82,7 @@ export function SecretaryDashboard() {
     <div className="space-y-5 max-w-4xl mx-auto pb-24">
       {/* Header */}
       <div className="bg-gradient-to-l from-[#5A1E2D] to-[#421923] text-white rounded-2xl p-5 shadow-md">
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <div className="text-xs text-white/80">أمين الخدمة • {currentUser?.full_name}</div>
-          <a
-            href={`https://wa.me/201202074649?text=${encodeURIComponent(
-              `بتواصل معاك بخصوص منظومة اورجانا الكنسية انا (${currentUser?.full_name || 'أمين الخدمة'})`
-            )}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 active:scale-95 text-emerald-200 border border-emerald-400/40 text-[11px] font-bold transition-all shadow-sm backdrop-blur-sm"
-            title="تواصل مع المطور على واتساب"
-          >
-            <MessageCircle className="w-3.5 h-3.5 text-emerald-300" />
-            <span>تواصل مع المطور 💬</span>
-          </a>
-        </div>
+        <div className="text-xs text-white/80 mb-2">أمين الخدمة • {currentUser?.full_name}</div>
         <h1 className="text-lg font-bold">متابعة الكشاكيل والخدام</h1>
         <div className="mt-3 pt-2.5 border-t border-white/15 flex flex-col gap-0.5">
           <span className="text-xs text-white/90 font-bold tracking-wide">
@@ -194,7 +180,7 @@ export function SecretaryDashboard() {
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-bold transition-all shadow-sm active:scale-95"
         >
           <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-          <span>تواصل مع المطور (واتساب 01202074649) 💬</span>
+          <span>تواصل مع المطور عبر واتساب 💬</span>
         </a>
         <div className="text-[10px] text-[#81777A]">
           منظومة أورجانا • MADAAR Technologies • مطرانية شبرا الخيمة وتوابعها
