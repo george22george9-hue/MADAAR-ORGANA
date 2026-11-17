@@ -94,8 +94,8 @@ export default function ServantsPage() {
     setFormJob(srv.job_or_study || '');
     setFormConfession(srv.confession_father || '');
     setFormJoiningDate(srv.joining_date);
-    const famId = srv.assigned_family_ids?.[0] || 'fam-prep-boys';
-    setFormFamilyIds(srv.assigned_family_ids || [famId]);
+    const famId = srv.assigned_family_ids?.[0] || srv.family_id || 'fam-prep-boys';
+    setFormFamilyIds(srv.assigned_family_ids && srv.assigned_family_ids.length > 0 ? srv.assigned_family_ids : [famId]);
     setFormStage(srv.assigned_stage || 'عام');
     setFormNotes(srv.notes || '');
     setShowModal(true);
@@ -141,7 +141,9 @@ export default function ServantsPage() {
 
   const filteredServants = servants.filter(s => {
     const matchesSearch = !search || s.full_name.includes(search) || s.phone.includes(search);
-    const matchesFamily = selectedFamilyFilter === 'all' || (s.assigned_family_ids && s.assigned_family_ids.includes(selectedFamilyFilter));
+    const matchesFamily = selectedFamilyFilter === 'all' || 
+      (s.assigned_family_ids && s.assigned_family_ids.includes(selectedFamilyFilter)) ||
+      s.family_id === selectedFamilyFilter;
     return matchesSearch && matchesFamily;
   });
 
@@ -351,7 +353,7 @@ export default function ServantsPage() {
                   </div>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="font-semibold text-[#282326]">الأسرة:</span>
-                    {(srv.assigned_family_names || []).map((fn, idx) => (
+                    {((srv.assigned_family_names && srv.assigned_family_names.length > 0) ? srv.assigned_family_names : [srv.family_name || 'غير محدد']).map((fn, idx) => (
                       <span key={idx} className="px-1.5 py-0.2 rounded bg-[#FAF5F6] text-[#702C3B] border border-[#EAE3E4] text-[10px] font-medium">
                         {fn}
                       </span>
@@ -446,6 +448,22 @@ export default function ServantsPage() {
                     <span className="text-[#81777A] block">أب الاعتراف:</span>
                     <span className="font-semibold text-[#702C3B]">{viewingServant.confession_father || 'غير مسجل'}</span>
                   </div>
+                  <div>
+                    <span className="text-[#81777A] block">الأسرة:</span>
+                    <span className="font-semibold text-[#282326]">
+                      {viewingServant.assigned_family_names?.join('، ') || viewingServant.family_name || 'غير محدد'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[#81777A] block">المرحلة الدراسية:</span>
+                    <span className="font-semibold text-[#702C3B]">{viewingServant.assigned_stage || 'عام'}</span>
+                  </div>
+                  {viewingServant.notes && (
+                    <div className="col-span-2">
+                      <span className="text-[#81777A] block">ملاحظات:</span>
+                      <span className="text-[#282326]">{viewingServant.notes}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="p-3 bg-white rounded-xl border border-[#EAE3E4]">
@@ -576,6 +594,17 @@ export default function ServantsPage() {
                     value={formConfession}
                     onChange={(e) => setFormConfession(e.target.value)}
                     placeholder="مثال: القمص / القس ..."
+                    className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#282326] mb-1">ملاحظات إضافية:</label>
+                  <textarea
+                    rows={2}
+                    value={formNotes}
+                    onChange={(e) => setFormNotes(e.target.value)}
+                    placeholder="أي ملاحظات حول الخادم أو خدمته..."
                     className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B]"
                   />
                 </div>

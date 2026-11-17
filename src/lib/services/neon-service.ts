@@ -292,14 +292,20 @@ export async function createJoinRequestPg(data: {
   const roleTitle = roleNameMap[data.requestedRole] || 'خادم';
   const notifMsg = `وصل طلب انضمام جديد من (${data.fullName.trim()}) بصفة [${roleTitle}] بانتظار مراجعة واعتماد الإدارة.`;
 
-  createNotificationPg({
-    target_type: 'all',
-    sender_name: 'بوابة الانضمام للخدمة',
-    sender_role: 'admin',
-    title: 'طلب انضمام جديد للخدمة 📋',
-    message: notifMsg,
-    type: 'general',
-  }).catch(console.error);
+  // Send in-app notification ONLY to the system administrator
+  const adminUsers = await queryPg(`SELECT id FROM users WHERE role = 'admin'`);
+  const adminIds = adminUsers.length > 0 ? adminUsers.map((u: any) => u.id) : ['usr-admin'];
+  for (const adminId of adminIds) {
+    createNotificationPg({
+      target_type: 'user',
+      target_id: adminId,
+      sender_name: 'بوابة الانضمام للخدمة',
+      sender_role: 'admin',
+      title: 'طلب انضمام جديد للخدمة 📋',
+      message: notifMsg,
+      type: 'general',
+    }).catch(console.error);
+  }
 
   sendPushToAdminsPg({
     title: '📋 طلب انضمام جديد — مارجرجس سندبيس',
@@ -565,33 +571,73 @@ export async function updateFamilyPg(
 // 5. Servants Management
 // --------------------------------------------------------------------
 export async function getServantsPg(familyId?: string): Promise<Servant[]> {
-  let sql = `
-    SELECT s.*, 
-           COALESCE(u.full_name, s.full_name) as full_name,
-           COALESCE(u.phone, s.phone) as phone,
-           COALESCE(u.confession_father, s.confession_father) as confession_father,
-           COALESCE(s.assigned_stage, u.assigned_stage, fs.stage) as assigned_stage,
-           fs.family_id, fs.role_in_family, f.name as family_name
+  const sql = `
+    SELECT 
+      s.id,
+      s.user_id,
+      COALESCE(u.full_name, s.full_name) as full_name,
+      COALESCE(u.phone, s.phone) as phone,
+      COALESCE(u.confession_father, s.confession_father, '') as confession_father,
+      COALESCE(s.job_or_study, '') as job_or_study,
+      COALESCE(s.national_id, '') as national_id,
+      COALESCE(s.notes, '') as notes,
+      s.joining_date,
+      s.is_active,
+      COALESCE(s.assigned_stage, u.assigned_stage) as assigned_stage,
+      (SELECT COUNT(DISTINCT meeting_id) FROM servant_attendance sa WHERE sa.servant_id = s.id AND sa.status = 'present') as attended_meetings,
+      (SELECT COUNT(DISTINCT activity_id) FROM meeting_activity_assignments maa WHERE maa.servant_id = s.id AND maa.participation_status = 'participated') as activities_count,
+      (SELECT COUNT(*) FROM meeting_activity_assignments maa WHERE maa.servant_id = s.id AND maa.responsibility = 'lesson_preparer' AND maa.participation_status = 'participated') as lesson_prep_count,
+      (SELECT COUNT(*) FROM meeting_activity_assignments maa WHERE maa.servant_id = s.id AND (maa.responsibility = 'main_presenter' OR maa.responsibility = 'presenter') AND maa.participation_status = 'participated') as lesson_explain_count,
+      COALESCE(
+        json_agg(DISTINCT jsonb_build_object('id', f.id, 'name', f.name, 'role', fs.role_in_family, 'stage', fs.stage)) 
+        FILTER (WHERE f.id IS NOT NULL),
+        '[]'::json
+      ) as families_info
     FROM servants s
     LEFT JOIN users u ON (s.user_id = u.id OR s.phone = u.phone)
     LEFT JOIN family_servants fs ON s.id = fs.servant_id
-    LEFT JOIN families f ON fs.family_id = f.id
+    LEFT JOIN families f ON (fs.family_id = f.id OR u.assigned_family_id = f.id)
+    GROUP BY s.id, u.id, u.full_name, u.phone, u.confession_father, u.assigned_stage
+    ORDER BY COALESCE(u.full_name, s.full_name) ASC
   `;
-  const params: any[] = [];
-  if (familyId) {
-    sql += ` WHERE fs.family_id = $1`;
-    params.push(familyId);
-  }
-  sql += ` ORDER BY COALESCE(u.full_name, s.full_name) ASC`;
+  const rows = await queryPg(sql);
 
-  const rows = await queryPg(sql, params);
-  return rows.map(r => ({
-    ...r,
-    is_active: Boolean(r.is_active),
-    family_id: r.family_id || null,
-    family_name: r.family_name || 'غير محدد',
-    role_in_family: r.role_in_family || 'خادم',
-  }));
+  let result: Servant[] = rows.map((r: any) => {
+    const famsInfo: Array<{ id: string; name: string; role?: string; stage?: string }> = Array.isArray(r.families_info) ? r.families_info : [];
+    const assigned_family_ids = famsInfo.map(f => f.id);
+    const assigned_family_names = famsInfo.map(f => f.name);
+    const primaryFam = famsInfo[0];
+    const attended = Number(r.attended_meetings || 0);
+
+    return {
+      id: r.id,
+      user_id: r.user_id,
+      full_name: r.full_name,
+      phone: r.phone,
+      confession_father: r.confession_father || undefined,
+      job_or_study: r.job_or_study || undefined,
+      national_id: r.national_id || undefined,
+      notes: r.notes || undefined,
+      is_active: Boolean(r.is_active),
+      assigned_stage: r.assigned_stage || primaryFam?.stage || undefined,
+      joining_date: r.joining_date instanceof Date ? r.joining_date.toISOString().split('T')[0] : (r.joining_date ? String(r.joining_date).split('T')[0] : ''),
+      assigned_family_ids,
+      assigned_family_names,
+      family_id: primaryFam?.id || null,
+      family_name: primaryFam?.name || 'غير محدد',
+      role_in_family: primaryFam?.role || 'خادم',
+      activities_count: Number(r.activities_count || 0),
+      lesson_prep_count: Number(r.lesson_prep_count || 0),
+      lesson_explain_count: Number(r.lesson_explain_count || 0),
+      attendance_rate: attended > 0 ? Math.min(100, Math.round((attended / 4) * 100)) : 100,
+    } as Servant;
+  });
+
+  if (familyId) {
+    result = result.filter(s => s.assigned_family_ids && s.assigned_family_ids.includes(familyId));
+  }
+
+  return result;
 }
 
 export async function getServantsPastoralOverviewPg(familyId?: string): Promise<{
@@ -732,79 +778,100 @@ export async function createServantPg(data: {
     data.assigned_stage?.trim() || null,
   ]);
 
-  if (data.family_id) {
-    const fsId = `fs-${data.family_id}-${id}`;
+  const targetFamilyId = data.family_id || (Array.isArray((data as any).family_ids) ? (data as any).family_ids[0] : undefined);
+  if (targetFamilyId) {
+    const fsId = `fs-${targetFamilyId}-${id}`;
     await queryPg(`
       INSERT INTO family_servants (id, family_id, servant_id, academic_year_id, role_in_family, stage)
       VALUES ($1, $2, $3, 'ay-2026-2027', $4, $5)
-      ON CONFLICT (id) DO NOTHING
-    `, [fsId, data.family_id, id, data.role_in_family?.trim() || 'خادم', data.assigned_stage?.trim() || null]);
+      ON CONFLICT (id) DO UPDATE SET family_id = EXCLUDED.family_id, stage = EXCLUDED.stage
+    `, [fsId, targetFamilyId, id, data.role_in_family?.trim() || 'خادم', data.assigned_stage?.trim() || null]);
+
+    await queryPg(`
+      UPDATE users SET assigned_family_id = $1, assigned_stage = $2 WHERE phone = $3
+    `, [targetFamilyId, data.assigned_stage?.trim() || null, data.phone.trim()]);
   }
 
-  const res = await queryOnePg(`SELECT * FROM servants WHERE id = $1`, [id]);
-  return { ...res, is_active: Boolean(res.is_active), family_id: data.family_id || null, assigned_stage: data.assigned_stage || null };
+  const all = await getServantsPg();
+  const found = all.find(s => s.id === id);
+  if (found) return found;
+  const fallback = await queryOnePg(`SELECT * FROM servants WHERE id = $1`, [id]);
+  return { ...fallback, is_active: Boolean(fallback?.is_active) } as Servant;
 }
 
-export async function updateServantPg(id: string, data: Partial<Servant> & { family_id?: string; role_in_family?: string; assigned_stage?: string }): Promise<Servant> {
+export async function updateServantPg(id: string, data: Partial<Servant> & { family_id?: string; family_ids?: string[]; role_in_family?: string; assigned_stage?: string }): Promise<Servant> {
   const oldServant = await queryOnePg(`SELECT * FROM servants WHERE id = $1`, [id]);
 
   await queryPg(`
     UPDATE servants
     SET full_name = COALESCE($1, full_name),
         phone = COALESCE($2, phone),
-        confession_father = COALESCE($3, confession_father),
-        job_or_study = COALESCE($4, job_or_study),
-        national_id = COALESCE($5, national_id),
-        notes = COALESCE($6, notes),
+        confession_father = CASE WHEN $3::text IS NOT NULL THEN $3 ELSE confession_father END,
+        job_or_study = CASE WHEN $4::text IS NOT NULL THEN $4 ELSE job_or_study END,
+        national_id = CASE WHEN $5::text IS NOT NULL THEN $5 ELSE national_id END,
+        notes = CASE WHEN $6::text IS NOT NULL THEN $6 ELSE notes END,
         is_active = COALESCE($7, is_active),
-        assigned_stage = COALESCE($8, assigned_stage),
+        assigned_stage = CASE WHEN $8::text IS NOT NULL THEN $8 ELSE assigned_stage END,
         updated_at = now()
     WHERE id = $9
   `, [
     data.full_name ?? null,
     data.phone ?? null,
-    data.confession_father ?? null,
-    data.job_or_study ?? null,
-    data.national_id ?? null,
-    data.notes ?? null,
+    data.confession_father !== undefined ? data.confession_father : null,
+    data.job_or_study !== undefined ? data.job_or_study : null,
+    data.national_id !== undefined ? data.national_id : null,
+    data.notes !== undefined ? data.notes : null,
     data.is_active !== undefined ? data.is_active : null,
-    data.assigned_stage ?? null,
+    data.assigned_stage !== undefined ? data.assigned_stage : null,
     id,
   ]);
 
   // Synchronize user account whenever servant full_name, phone, confession_father, or assigned_stage is edited
-  if (data.full_name || data.phone || data.confession_father || data.is_active !== undefined || data.assigned_stage) {
-    await queryPg(`
-      UPDATE users
-      SET full_name = COALESCE($1, full_name),
-          phone = COALESCE($2, phone),
-          confession_father = COALESCE($3, confession_father),
-          is_active = COALESCE($4, is_active),
-          assigned_stage = COALESCE($7, assigned_stage),
-          updated_at = now()
-      WHERE id = $5 OR phone = $6 OR (phone = $2 AND $2 IS NOT NULL)
-    `, [
-      data.full_name ?? null,
-      data.phone ?? null,
-      data.confession_father ?? null,
-      data.is_active !== undefined ? data.is_active : null,
-      oldServant?.user_id || null,
-      oldServant?.phone || null,
-      data.assigned_stage ?? null,
-    ]);
-  }
+  await queryPg(`
+    UPDATE users
+    SET full_name = COALESCE($1, full_name),
+        phone = COALESCE($2, phone),
+        confession_father = CASE WHEN $3::text IS NOT NULL THEN $3 ELSE confession_father END,
+        is_active = COALESCE($4, is_active),
+        assigned_stage = CASE WHEN $5::text IS NOT NULL THEN $5 ELSE assigned_stage END,
+        updated_at = now()
+    WHERE id = $6 OR phone = $7 OR (phone = $2 AND $2 IS NOT NULL)
+  `, [
+    data.full_name ?? null,
+    data.phone ?? null,
+    data.confession_father !== undefined ? data.confession_father : null,
+    data.is_active !== undefined ? data.is_active : null,
+    data.assigned_stage !== undefined ? data.assigned_stage : null,
+    oldServant?.user_id || null,
+    oldServant?.phone || null,
+  ]);
 
-  if (data.family_id) {
-    const fsId = `fs-${data.family_id}-${id}`;
+  const targetFamilyId = data.family_id || (Array.isArray(data.family_ids) ? data.family_ids[0] : undefined);
+  if (targetFamilyId) {
+    // Delete any older assignments in other families to prevent duplicate servant cards
+    await queryPg(`DELETE FROM family_servants WHERE servant_id = $1 AND family_id <> $2`, [id, targetFamilyId]);
+
+    const fsId = `fs-${targetFamilyId}-${id}`;
     await queryPg(`
       INSERT INTO family_servants (id, family_id, servant_id, academic_year_id, role_in_family, stage)
       VALUES ($1, $2, $3, 'ay-2026-2027', $4, $5)
       ON CONFLICT (id) DO UPDATE SET family_id = EXCLUDED.family_id, role_in_family = EXCLUDED.role_in_family, stage = COALESCE(EXCLUDED.stage, family_servants.stage)
-    `, [fsId, data.family_id, id, data.role_in_family || 'خادم', data.assigned_stage || null]);
+    `, [fsId, targetFamilyId, id, data.role_in_family || 'خادم', data.assigned_stage || null]);
+
+    await queryPg(`
+      UPDATE users
+      SET assigned_family_id = $1
+      WHERE id = $2 OR phone = $3
+    `, [targetFamilyId, oldServant?.user_id || null, oldServant?.phone || null]);
+  } else if (data.assigned_stage) {
+    await queryPg(`UPDATE family_servants SET stage = $1 WHERE servant_id = $2`, [data.assigned_stage, id]);
   }
 
-  const res = await queryOnePg(`SELECT * FROM servants WHERE id = $1`, [id]);
-  return { ...res, is_active: Boolean(res.is_active) };
+  const all = await getServantsPg();
+  const found = all.find(s => s.id === id);
+  if (found) return found;
+  const fallback = await queryOnePg(`SELECT * FROM servants WHERE id = $1`, [id]);
+  return { ...fallback, is_active: Boolean(fallback?.is_active) } as Servant;
 }
 
 export async function deleteServantPg(id: string): Promise<boolean> {

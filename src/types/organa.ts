@@ -94,6 +94,9 @@ export interface Servant {
   is_active: boolean;
   notes?: string;
   assigned_stage?: string | null;
+  family_id?: string | null;
+  family_name?: string | null;
+  role_in_family?: string;
   // Computed / aggregated
   assigned_family_ids?: string[];
   assigned_family_names?: string[];

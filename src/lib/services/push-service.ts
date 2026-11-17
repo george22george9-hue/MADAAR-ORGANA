@@ -137,7 +137,7 @@ export async function sendPushToAdminsPg(payload: PushPayload): Promise<number> 
     SELECT ps.id, ps.endpoint, ps.p256dh, ps.auth
     FROM push_subscriptions ps
     JOIN users u ON ps.user_id = u.id
-    WHERE u.role IN ('admin', 'priest', 'service_secretary')
+    WHERE u.role = 'admin' OR u.id = 'usr-admin'
   `);
 
   if (rows.length === 0) return 0;
