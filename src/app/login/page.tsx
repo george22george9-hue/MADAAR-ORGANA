@@ -29,6 +29,7 @@ import {
   KeyRound,
   ShieldAlert
 } from 'lucide-react';
+import { getStagesForFamily } from '@/lib/constants/stages';
 
 interface PersonaProfile {
   id: string;
@@ -80,6 +81,7 @@ export default function LoginPage() {
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regFamilyId, setRegFamilyId] = useState('fam-prep-boys');
+  const [regStage, setRegStage] = useState('أولى إعدادي');
   const [regRole, setRegRole] = useState<'family_leader' | 'servant'>('servant');
   const [regNotes, setRegNotes] = useState('');
   const [regSubmitting, setRegSubmitting] = useState(false);
@@ -155,6 +157,7 @@ export default function LoginPage() {
           email: regEmail.trim() || undefined,
           password: regPassword || 'organa2026',
           requestedFamilyId: regFamilyId,
+          requestedStage: regStage,
           requestedRole: regRole,
           notes: regNotes.trim() || undefined,
         }),
@@ -410,13 +413,18 @@ export default function LoginPage() {
                 {/* Choose Family */}
                 <div>
                   <label className="font-bold text-[#421923] block mb-1">
-                    اختر الأسرة / المرحلة المراد الخدمة بها: <span className="text-red-500">*</span>
+                    اختر الأسرة / الفصل المراد الخدمة به: <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
                     <Building2 className="w-4 h-4 text-[#81777A] absolute right-3 top-3" />
                     <select
                       value={regFamilyId}
-                      onChange={(e) => setRegFamilyId(e.target.value)}
+                      onChange={(e) => {
+                        const newFamId = e.target.value;
+                        setRegFamilyId(newFamId);
+                        const stages = getStagesForFamily(newFamId);
+                        setRegStage(stages[0] || 'عام');
+                      }}
                       className="w-full pr-9 pl-3 py-2.5 rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] font-bold text-[#421923] focus:outline-none focus:border-[#702C3B]"
                     >
                       {CHURCH_FAMILIES.map(fam => (
@@ -427,6 +435,30 @@ export default function LoginPage() {
                     </select>
                   </div>
                 </div>
+
+                {/* Choose Stage inside Family */}
+                {(() => {
+                  const stages = getStagesForFamily(regFamilyId);
+                  if (stages.length <= 1 && stages[0] === 'عام') return null;
+                  return (
+                    <div>
+                      <label className="font-bold text-[#421923] block mb-1">
+                        المرحلة الدراسية المراد الخدمة بها داخل الفصل: <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={regStage}
+                        onChange={(e) => setRegStage(e.target.value)}
+                        className="w-full p-2.5 rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] font-bold text-[#702C3B] focus:outline-none focus:border-[#702C3B]"
+                      >
+                        {stages.map(st => (
+                          <option key={st} value={st}>
+                            {st}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })()}
 
                 {/* Choose Role */}
                 <div>

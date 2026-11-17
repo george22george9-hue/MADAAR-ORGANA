@@ -42,7 +42,11 @@ export async function POST(request: NextRequest) {
     const actor = INITIAL_PERSONAS[actorRole];
 
     if (isNeonConfigured()) {
-      const servant = await createServantPg(body);
+      const payload = {
+        ...body,
+        family_id: body.family_id || (Array.isArray(body.family_ids) ? body.family_ids[0] : undefined),
+      };
+      const servant = await createServantPg(payload);
       return NextResponse.json({ success: true, servant });
     }
 
@@ -61,7 +65,11 @@ export async function PUT(request: NextRequest) {
     const actor = INITIAL_PERSONAS[actorRole];
 
     if (isNeonConfigured()) {
-      const servant = await updateServantPg(id, data);
+      const payload = {
+        ...data,
+        family_id: data.family_id || (Array.isArray(data.family_ids) ? data.family_ids[0] : undefined),
+      };
+      const servant = await updateServantPg(id, payload);
       return NextResponse.json({ success: true, servant });
     }
 

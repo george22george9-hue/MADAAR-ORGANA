@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { exportToExcel } from '@/lib/export/excel';
 import { exportToPrintablePDF } from '@/lib/export/pdf';
+import { getStagesForFamily, getStageBadgeStyle } from '@/lib/constants/stages';
 
 export default function ServantsPage() {
   const { currentRole, canManageAllFamilies, assignedFamilyId } = useAuth();
@@ -47,6 +48,7 @@ export default function ServantsPage() {
   const [formConfession, setFormConfession] = useState('');
   const [formJoiningDate, setFormJoiningDate] = useState('2022-09-01');
   const [formFamilyIds, setFormFamilyIds] = useState<string[]>([]);
+  const [formStage, setFormStage] = useState('أولى إعدادي');
   const [formNotes, setFormNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -77,7 +79,10 @@ export default function ServantsPage() {
     setFormJob('');
     setFormConfession('');
     setFormJoiningDate(new Date().toISOString().split('T')[0]);
-    setFormFamilyIds(['fam-prep-boys']);
+    const initFamId = 'fam-prep-boys';
+    setFormFamilyIds([initFamId]);
+    const stages = getStagesForFamily(initFamId);
+    setFormStage(stages[0] || 'عام');
     setFormNotes('');
     setShowModal(true);
   };
@@ -89,7 +94,9 @@ export default function ServantsPage() {
     setFormJob(srv.job_or_study || '');
     setFormConfession(srv.confession_father || '');
     setFormJoiningDate(srv.joining_date);
-    setFormFamilyIds(srv.assigned_family_ids || []);
+    const famId = srv.assigned_family_ids?.[0] || 'fam-prep-boys';
+    setFormFamilyIds(srv.assigned_family_ids || [famId]);
+    setFormStage(srv.assigned_stage || 'عام');
     setFormNotes(srv.notes || '');
     setShowModal(true);
   };
@@ -110,6 +117,7 @@ export default function ServantsPage() {
         confession_father: formConfession.trim(),
         joining_date: formJoiningDate,
         family_ids: formFamilyIds,
+        assigned_stage: formStage,
         notes: formNotes.trim(),
         actorRole: currentRole,
       };
@@ -306,7 +314,17 @@ export default function ServantsPage() {
                       {srv.full_name.substring(0, 1)}
                     </div>
                     <div>
-                      <h3 className="font-bold text-sm text-[#282326]">{srv.full_name}</h3>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h3 className="font-bold text-sm text-[#282326]">{srv.full_name}</h3>
+                        {srv.assigned_stage && srv.assigned_stage !== 'عام' && (() => {
+                          const badge = getStageBadgeStyle(srv.assigned_stage);
+                          return (
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
+                              {srv.assigned_stage}
+                            </span>
+                          );
+                        })()}
+                      </div>
                       <div className="text-[11px] text-[#81777A] flex items-center gap-1 mt-0.5">
                         <Phone className="w-3 h-3 text-[#702C3B]" />
                         <span>{srv.phone}</span>
@@ -513,17 +531,42 @@ export default function ServantsPage() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block font-bold text-[#282326] mb-1">الأسرة المكلف بالخدمة بها:</label>
-                  <select
-                    value={formFamilyIds[0] || 'fam-prep-boys'}
-                    onChange={(e) => setFormFamilyIds([e.target.value])}
-                    className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B]"
-                  >
-                    {families.map(f => (
-                      <option key={f.id} value={f.id}>{f.name}</option>
-                    ))}
-                  </select>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block font-bold text-[#282326] mb-1">الأسرة المكلف بها:</label>
+                    <select
+                      value={formFamilyIds[0] || 'fam-prep-boys'}
+                      onChange={(e) => {
+                        const newFamId = e.target.value;
+                        setFormFamilyIds([newFamId]);
+                        const famObj = families.find(f => f.id === newFamId);
+                        const stages = getStagesForFamily(newFamId, famObj?.name, famObj?.stages);
+                        setFormStage(stages[0] || 'عام');
+                      }}
+                      className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B]"
+                    >
+                      {families.map(f => (
+                        <option key={f.id} value={f.id}>{f.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-bold text-[#282326] mb-1">المرحلة الدراسية بالفصل:</label>
+                    <select
+                      value={formStage}
+                      onChange={(e) => setFormStage(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-[#EAE3E4] font-bold text-[#702C3B] focus:outline-none focus:border-[#702C3B]"
+                    >
+                      {(() => {
+                        const famId = formFamilyIds[0] || 'fam-prep-boys';
+                        const famObj = families.find(f => f.id === famId);
+                        const stages = getStagesForFamily(famId, famObj?.name, famObj?.stages);
+                        return stages.map(st => (
+                          <option key={st} value={st}>{st}</option>
+                        ));
+                      })()}
+                    </select>
+                  </div>
                 </div>
 
                 <div>

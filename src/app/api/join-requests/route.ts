@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
         password: body.password || body.password_hash,
         requestedRole: body.requestedRole || body.requested_role,
         requestedFamilyId: body.requestedFamilyId || body.requested_family_id,
+        requestedStage: body.requestedStage || body.requested_stage,
         confessionFather: body.confessionFather || body.confession_father,
         nationalId: body.nationalId || body.national_id,
         jobOrStudy: body.jobOrStudy || body.job_or_study,

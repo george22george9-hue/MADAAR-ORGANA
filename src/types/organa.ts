@@ -55,6 +55,7 @@ export interface ChurchUser {
   avatar_url?: string;
   is_active: boolean;
   assigned_family_id?: string | null; // For family_leader & servant
+  assigned_stage?: string | null; // e.g. "أولى ثانوي", "تانية إعدادي"
   confession_father?: string;
   password_hash?: string;
   created_at: string;
@@ -92,6 +93,7 @@ export interface Servant {
   joining_date: string;
   is_active: boolean;
   notes?: string;
+  assigned_stage?: string | null;
   // Computed / aggregated
   assigned_family_ids?: string[];
   assigned_family_names?: string[];
@@ -109,6 +111,7 @@ export interface FamilyServantAssignment {
   servant_id: string;
   academic_year_id: string;
   role_in_family?: string; // e.g. "أمين مساعد", "مسؤول افتقاد"
+  stage?: string | null;
   is_active: boolean;
   created_at: string;
 }
@@ -383,6 +386,7 @@ export interface JoinRequest {
   requested_role: 'family_leader' | 'servant';
   requested_family_id: string;
   requested_family_name?: string;
+  requested_stage?: string | null;
   status: 'pending' | 'approved' | 'rejected';
   confession_father?: string;
   national_id?: string;

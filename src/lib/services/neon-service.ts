@@ -20,7 +20,7 @@ import {
   AbsenceAlert,
   ChurchNotification,
 } from '@/types/organa';
-import { getStagesForFamily } from '@/lib/constants/stages';
+import { getStagesForFamily, getFamilyCodeLetter, getStageCodeLetter } from '@/lib/constants/stages';
 
 export function isNeonConfigured(): boolean {
   // Always use Neon Cloud PostgreSQL for 100% persistent data across all deployments & Vercel
@@ -245,6 +245,7 @@ export async function createJoinRequestPg(data: {
   password?: string;
   requestedRole: UserRole;
   requestedFamilyId?: string;
+  requestedStage?: string;
   confessionFather?: string;
   nationalId?: string;
   jobOrStudy?: string;
@@ -258,9 +259,9 @@ export async function createJoinRequestPg(data: {
 
   await queryPg(`
     INSERT INTO join_requests (
-      id, full_name, phone, email, password_hash, requested_role, requested_family_id,
+      id, full_name, phone, email, password_hash, requested_role, requested_family_id, requested_stage,
       confession_father, national_id, job_or_study, address, birth_date, notes, status
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending')
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'pending')
   `, [
     id,
     data.fullName.trim(),
@@ -269,6 +270,7 @@ export async function createJoinRequestPg(data: {
     passwordHash,
     data.requestedRole,
     data.requestedFamilyId || null,
+    data.requestedStage?.trim() || null,
     data.confessionFather?.trim() || null,
     data.nationalId?.trim() || null,
     data.jobOrStudy?.trim() || null,
@@ -348,15 +350,17 @@ export async function approveJoinRequestPg(
         SET full_name = $1,
             role = $2,
             assigned_family_id = COALESCE($3, assigned_family_id),
-            confession_father = COALESCE($4, confession_father),
-            password_hash = COALESCE($5, password_hash),
+            assigned_stage = COALESCE($4, assigned_stage),
+            confession_father = COALESCE($5, confession_father),
+            password_hash = COALESCE($6, password_hash),
             is_active = true,
             updated_at = now()
-        WHERE id = $6
+        WHERE id = $7
       `, [
         req.full_name,
         req.requested_role,
         req.requested_family_id || null,
+        req.requested_stage || null,
         req.confession_father || null,
         finalPassHash,
         userId,
@@ -364,8 +368,8 @@ export async function approveJoinRequestPg(
     } else {
       userId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       await client.query(`
-        INSERT INTO users (id, email, full_name, phone, role, assigned_family_id, confession_father, password_hash, is_active)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+        INSERT INTO users (id, email, full_name, phone, role, assigned_family_id, assigned_stage, confession_father, password_hash, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
       `, [
         userId,
         req.email || `${req.phone}@organa.eg`,
@@ -373,6 +377,7 @@ export async function approveJoinRequestPg(
         req.phone,
         req.requested_role,
         req.requested_family_id || null,
+        req.requested_stage || null,
         req.confession_father || null,
         finalPassHash,
       ]);
@@ -386,8 +391,8 @@ export async function approveJoinRequestPg(
       if (!servantRow) {
         servantId = `srv-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
         await client.query(`
-          INSERT INTO servants (id, user_id, full_name, phone, national_id, confession_father, job_or_study, joining_date, is_active, notes)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE, true, $8)
+          INSERT INTO servants (id, user_id, full_name, phone, national_id, confession_father, job_or_study, joining_date, is_active, notes, assigned_stage)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE, true, $8, $9)
         `, [
           servantId,
           userId,
@@ -397,6 +402,7 @@ export async function approveJoinRequestPg(
           req.confession_father || null,
           req.job_or_study || null,
           req.notes || null,
+          req.requested_stage || null,
         ]);
       } else {
         await client.query(`
@@ -404,20 +410,21 @@ export async function approveJoinRequestPg(
           SET user_id = $1,
               full_name = $2,
               confession_father = COALESCE($3, confession_father),
+              assigned_stage = COALESCE($4, assigned_stage),
               is_active = true,
               updated_at = now()
-          WHERE id = $4
-        `, [userId, req.full_name, req.confession_father || null, servantId]);
+          WHERE id = $5
+        `, [userId, req.full_name, req.confession_father || null, req.requested_stage || null, servantId]);
       }
 
       // Link family in `family_servants`
       if (req.requested_family_id && servantId) {
         const fsId = `fs-${req.requested_family_id}-${servantId}`;
         await client.query(`
-          INSERT INTO family_servants (id, family_id, servant_id, academic_year_id, role_in_family)
-          VALUES ($1, $2, $3, 'ay-2026-2027', $4)
-          ON CONFLICT (id) DO UPDATE SET role_in_family = EXCLUDED.role_in_family
-        `, [fsId, req.requested_family_id, servantId, req.requested_role === 'family_leader' ? 'أمين أسرة' : 'خادم']);
+          INSERT INTO family_servants (id, family_id, servant_id, academic_year_id, role_in_family, stage)
+          VALUES ($1, $2, $3, 'ay-2026-2027', $4, $5)
+          ON CONFLICT (id) DO UPDATE SET role_in_family = EXCLUDED.role_in_family, stage = COALESCE(EXCLUDED.stage, family_servants.stage)
+        `, [fsId, req.requested_family_id, servantId, req.requested_role === 'family_leader' ? 'أمين أسرة' : 'خادم', req.requested_stage || null]);
 
         if (req.requested_role === 'family_leader') {
           await client.query(`UPDATE families SET leader_id = $1 WHERE id = $2`, [userId, req.requested_family_id]);
@@ -563,6 +570,7 @@ export async function getServantsPg(familyId?: string): Promise<Servant[]> {
            COALESCE(u.full_name, s.full_name) as full_name,
            COALESCE(u.phone, s.phone) as phone,
            COALESCE(u.confession_father, s.confession_father) as confession_father,
+           COALESCE(s.assigned_stage, u.assigned_stage, fs.stage) as assigned_stage,
            fs.family_id, fs.role_in_family, f.name as family_name
     FROM servants s
     LEFT JOIN users u ON (s.user_id = u.id OR s.phone = u.phone)
@@ -702,6 +710,7 @@ export async function createServantPg(data: {
   full_name: string;
   phone: string;
   family_id?: string;
+  assigned_stage?: string;
   role_in_family?: string;
   confession_father?: string;
   national_id?: string;
@@ -710,8 +719,8 @@ export async function createServantPg(data: {
 }): Promise<Servant> {
   const id = `srv-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   await queryPg(`
-    INSERT INTO servants (id, full_name, phone, national_id, confession_father, job_or_study, joining_date, is_active, notes)
-    VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE, true, $7)
+    INSERT INTO servants (id, full_name, phone, national_id, confession_father, job_or_study, joining_date, is_active, notes, assigned_stage)
+    VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE, true, $7, $8)
   `, [
     id,
     data.full_name.trim(),
@@ -720,22 +729,23 @@ export async function createServantPg(data: {
     data.confession_father?.trim() || null,
     data.job_or_study?.trim() || null,
     data.notes?.trim() || null,
+    data.assigned_stage?.trim() || null,
   ]);
 
   if (data.family_id) {
     const fsId = `fs-${data.family_id}-${id}`;
     await queryPg(`
-      INSERT INTO family_servants (id, family_id, servant_id, academic_year_id, role_in_family)
-      VALUES ($1, $2, $3, 'ay-2026-2027', $4)
+      INSERT INTO family_servants (id, family_id, servant_id, academic_year_id, role_in_family, stage)
+      VALUES ($1, $2, $3, 'ay-2026-2027', $4, $5)
       ON CONFLICT (id) DO NOTHING
-    `, [fsId, data.family_id, id, data.role_in_family?.trim() || 'خادم']);
+    `, [fsId, data.family_id, id, data.role_in_family?.trim() || 'خادم', data.assigned_stage?.trim() || null]);
   }
 
   const res = await queryOnePg(`SELECT * FROM servants WHERE id = $1`, [id]);
-  return { ...res, is_active: Boolean(res.is_active), family_id: data.family_id || null };
+  return { ...res, is_active: Boolean(res.is_active), family_id: data.family_id || null, assigned_stage: data.assigned_stage || null };
 }
 
-export async function updateServantPg(id: string, data: Partial<Servant> & { family_id?: string; role_in_family?: string }): Promise<Servant> {
+export async function updateServantPg(id: string, data: Partial<Servant> & { family_id?: string; role_in_family?: string; assigned_stage?: string }): Promise<Servant> {
   const oldServant = await queryOnePg(`SELECT * FROM servants WHERE id = $1`, [id]);
 
   await queryPg(`
@@ -747,8 +757,9 @@ export async function updateServantPg(id: string, data: Partial<Servant> & { fam
         national_id = COALESCE($5, national_id),
         notes = COALESCE($6, notes),
         is_active = COALESCE($7, is_active),
+        assigned_stage = COALESCE($8, assigned_stage),
         updated_at = now()
-    WHERE id = $8
+    WHERE id = $9
   `, [
     data.full_name ?? null,
     data.phone ?? null,
@@ -757,17 +768,19 @@ export async function updateServantPg(id: string, data: Partial<Servant> & { fam
     data.national_id ?? null,
     data.notes ?? null,
     data.is_active !== undefined ? data.is_active : null,
+    data.assigned_stage ?? null,
     id,
   ]);
 
-  // Synchronize user account whenever servant full_name or phone is edited
-  if (data.full_name || data.phone || data.confession_father || data.is_active !== undefined) {
+  // Synchronize user account whenever servant full_name, phone, confession_father, or assigned_stage is edited
+  if (data.full_name || data.phone || data.confession_father || data.is_active !== undefined || data.assigned_stage) {
     await queryPg(`
       UPDATE users
       SET full_name = COALESCE($1, full_name),
           phone = COALESCE($2, phone),
           confession_father = COALESCE($3, confession_father),
           is_active = COALESCE($4, is_active),
+          assigned_stage = COALESCE($7, assigned_stage),
           updated_at = now()
       WHERE id = $5 OR phone = $6 OR (phone = $2 AND $2 IS NOT NULL)
     `, [
@@ -777,16 +790,17 @@ export async function updateServantPg(id: string, data: Partial<Servant> & { fam
       data.is_active !== undefined ? data.is_active : null,
       oldServant?.user_id || null,
       oldServant?.phone || null,
+      data.assigned_stage ?? null,
     ]);
   }
 
   if (data.family_id) {
     const fsId = `fs-${data.family_id}-${id}`;
     await queryPg(`
-      INSERT INTO family_servants (id, family_id, servant_id, academic_year_id, role_in_family)
-      VALUES ($1, $2, $3, 'ay-2026-2027', $4)
-      ON CONFLICT (id) DO UPDATE SET family_id = EXCLUDED.family_id, role_in_family = EXCLUDED.role_in_family
-    `, [fsId, data.family_id, id, data.role_in_family || 'خادم']);
+      INSERT INTO family_servants (id, family_id, servant_id, academic_year_id, role_in_family, stage)
+      VALUES ($1, $2, $3, 'ay-2026-2027', $4, $5)
+      ON CONFLICT (id) DO UPDATE SET family_id = EXCLUDED.family_id, role_in_family = EXCLUDED.role_in_family, stage = COALESCE(EXCLUDED.stage, family_servants.stage)
+    `, [fsId, data.family_id, id, data.role_in_family || 'خادم', data.assigned_stage || null]);
   }
 
   const res = await queryOnePg(`SELECT * FROM servants WHERE id = $1`, [id]);
@@ -889,7 +903,44 @@ export async function createServedMemberPg(data: {
   photo_url?: string;
 }): Promise<ServedMember> {
   const id = `mem-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-  const code = data.code?.trim() || `MEM-${Math.floor(100 + Math.random() * 900)}`;
+  const stageVal = data.stage?.trim() || 'عام';
+
+  // Smart Structured Code: [FamilyLetter][StageLetter][01..99]
+  let code = data.code?.trim();
+  if (!code || code.startsWith('MEM-')) {
+    const famLetter = getFamilyCodeLetter(data.current_family_id);
+    const stageLetter = getStageCodeLetter(stageVal);
+    const prefix = `${famLetter}${stageLetter}`;
+    const latest = await queryOnePg<{ code: string }>(`
+      SELECT code FROM served_members 
+      WHERE code LIKE $1 
+      ORDER BY code DESC 
+      LIMIT 1
+    `, [`${prefix}%`]);
+    let nextNum = 1;
+    if (latest?.code && latest.code.startsWith(prefix)) {
+      const parsed = parseInt(latest.code.replace(prefix, ''), 10);
+      if (!isNaN(parsed)) nextNum = parsed + 1;
+    }
+    code = `${prefix}${String(nextNum).padStart(2, '0')}`;
+  }
+
+  // Automatic servant assignment according to stage (يتسقط علطول حسب المرحلة)
+  let assignedServantId = data.assigned_servant_id || null;
+  if (!assignedServantId && stageVal) {
+    const matchServant = await queryOnePg<{ id: string }>(`
+      SELECT s.id 
+      FROM servants s
+      LEFT JOIN family_servants fs ON s.id = fs.servant_id
+      WHERE (s.assigned_stage = $1 OR fs.stage = $1)
+        AND (fs.family_id = $2 OR s.id IN (SELECT servant_id FROM family_servants WHERE family_id = $2))
+      LIMIT 1
+    `, [stageVal, data.current_family_id]);
+    if (matchServant) {
+      assignedServantId = matchServant.id;
+    }
+  }
+
   const gender = data.gender || 'male';
   const birthDate = data.birth_date || '2013-05-15';
   const guardianName = data.guardian_name?.trim() || 'ولي أمر';
@@ -912,9 +963,9 @@ export async function createServedMemberPg(data: {
     data.full_name.trim(),
     gender,
     birthDate,
-    data.stage?.trim() || 'عام',
+    stageVal,
     data.current_family_id,
-    data.assigned_servant_id || null,
+    assignedServantId,
     guardianName,
     guardianPhone,
     guardianRel,

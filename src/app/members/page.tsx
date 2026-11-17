@@ -764,8 +764,16 @@ export default function MembersPage() {
                         setFormFamilyId(newFamId);
                         const fObj = families.find(f => f.id === newFamId);
                         const stages = getStagesForFamily(newFamId, fObj?.name, fObj?.stages);
-                        if (!stages.includes(formStage)) {
-                          setFormStage(stages[0] || 'عام');
+                        const newStage = stages[0] || 'عام';
+                        setFormStage(newStage);
+
+                        // Auto-drop servant according to stage
+                        const matchServant = servants.find(s => 
+                          (s.assigned_stage === newStage) &&
+                          (s.assigned_family_ids?.includes(newFamId) || (s as any).family_id === newFamId)
+                        );
+                        if (matchServant) {
+                          setFormServantId(matchServant.id);
                         }
                       }}
                       className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B]"
@@ -779,7 +787,19 @@ export default function MembersPage() {
                     <label className="block font-bold text-[#282326] mb-1">المرحلة الدراسية بالفصل:</label>
                     <select
                       value={formStage}
-                      onChange={(e) => setFormStage(e.target.value)}
+                      onChange={(e) => {
+                        const newStage = e.target.value;
+                        setFormStage(newStage);
+
+                        // Auto-drop servant according to stage
+                        const matchServant = servants.find(s => 
+                          (s.assigned_stage === newStage) &&
+                          (s.assigned_family_ids?.includes(formFamilyId) || (s as any).family_id === formFamilyId)
+                        );
+                        if (matchServant) {
+                          setFormServantId(matchServant.id);
+                        }
+                      }}
                       className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B] font-bold text-[#702C3B]"
                     >
                       {(() => {
@@ -794,15 +814,19 @@ export default function MembersPage() {
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#282326] mb-1">الخادم المسؤول:</label>
+                  <label className="block font-bold text-[#282326] mb-1">
+                    الخادم المسؤول <span className="text-[#81777A] font-normal">(يتحدد تلقائياً حسب المرحلة):</span>
+                  </label>
                   <select
                     value={formServantId}
                     onChange={(e) => setFormServantId(e.target.value)}
                     className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B]"
                   >
-                    <option value="">(اختياري - يحدد لاحقاً)</option>
+                    <option value="">(تلقائي حسب المرحلة / يحدد لاحقاً)</option>
                     {servants.map(s => (
-                      <option key={s.id} value={s.id}>{s.full_name}</option>
+                      <option key={s.id} value={s.id}>
+                        {s.full_name} {s.assigned_stage ? `— [خادم ${s.assigned_stage}]` : ''}
+                      </option>
                     ))}
                   </select>
                 </div>
