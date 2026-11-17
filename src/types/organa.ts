@@ -73,6 +73,7 @@ export interface Family {
   location?: string;
   description?: string;
   color_code?: string;
+  stages?: string[];
   servants_count?: number;
   members_count?: number;
   created_at: string;

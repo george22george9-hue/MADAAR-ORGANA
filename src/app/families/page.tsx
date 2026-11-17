@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { exportToExcel } from '@/lib/export/excel';
 import { exportToPrintablePDF } from '@/lib/export/pdf';
+import { getStageBadgeStyle } from '@/lib/constants/stages';
 
 export default function FamiliesPage() {
   const { currentRole, canManageAllFamilies, assignedFamilyId } = useAuth();
@@ -314,6 +315,28 @@ export default function FamiliesPage() {
                   <span className="font-semibold text-[#282326]">أمين الأسرة: </span>
                   <span>{fam.leader_name || 'غير محدد بعد'}</span>
                 </div>
+
+                {/* Stages / المراحل والصفوف الدراسية التابعة للفصل */}
+                {fam.stages && fam.stages.length > 0 && fam.stages[0] !== 'عام' && (
+                  <div className="mb-3 p-2.5 rounded-xl bg-[#FAF5F6] border border-[#EAE3E4]">
+                    <div className="text-[10px] font-bold text-[#702C3B] mb-1.5">
+                      المراحل والصفوف الدراسية ({fam.stages.length}):
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {fam.stages.map((st) => {
+                        const style = getStageBadgeStyle(st);
+                        return (
+                          <span
+                            key={st}
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${style.bg} ${style.text} ${style.border}`}
+                          >
+                            {st}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Meeting time & location */}
                 <div className="space-y-1.5 text-xs text-[#81777A] mb-4">

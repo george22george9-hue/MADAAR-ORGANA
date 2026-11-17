@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { exportToExcel } from '@/lib/export/excel';
 import { exportToPrintablePDF } from '@/lib/export/pdf';
+import { getStagesForFamily, getStageBadgeStyle } from '@/lib/constants/stages';
 
 export default function MembersPage() {
   const { currentRole, canManageAllFamilies, assignedFamilyId } = useAuth();
@@ -43,6 +44,7 @@ export default function MembersPage() {
   const [search, setSearch] = useState('');
   const [familyFilter, setFamilyFilter] = useState<string>('all');
   const [servantFilter, setServantFilter] = useState<string>('all');
+  const [stageFilter, setStageFilter] = useState<string>('all');
 
   // Modals & Drawers
   const [viewingMember, setViewingMember] = useState<ServedMember | null>(null);
@@ -54,12 +56,14 @@ export default function MembersPage() {
   // Transfer modal
   const [transferringMember, setTransferringMember] = useState<ServedMember | null>(null);
   const [targetFamilyId, setTargetFamilyId] = useState('');
+  const [targetStage, setTargetStage] = useState('عام');
 
   // Form State
   const [formName, setFormName] = useState('');
   const [formGender, setFormGender] = useState<'male' | 'female'>('male');
   const [formDob, setFormDob] = useState('2013-05-15');
   const [formFamilyId, setFormFamilyId] = useState('fam-prep-boys');
+  const [formStage, setFormStage] = useState('أولى إعدادي');
   const [formServantId, setFormServantId] = useState('');
   const [formGuardianName, setFormGuardianName] = useState('');
   const [formGuardianPhone, setFormGuardianPhone] = useState('');
@@ -108,7 +112,11 @@ export default function MembersPage() {
     setFormName('');
     setFormGender('male');
     setFormDob('2013-05-15');
-    setFormFamilyId(assignedFamilyId || 'fam-prep-boys');
+    const initFamId = assignedFamilyId || 'fam-prep-boys';
+    setFormFamilyId(initFamId);
+    const targetFam = families.find(f => f.id === initFamId);
+    const initStages = getStagesForFamily(initFamId, targetFam?.name, targetFam?.stages);
+    setFormStage(initStages[0] || 'عام');
     setFormServantId('');
     setFormGuardianName('');
     setFormGuardianPhone('');
@@ -125,6 +133,7 @@ export default function MembersPage() {
     setFormGender(m.gender);
     setFormDob(m.birth_date);
     setFormFamilyId(m.current_family_id);
+    setFormStage(m.stage || 'عام');
     setFormServantId(m.assigned_servant_id || '');
     setFormGuardianName(m.guardian_name);
     setFormGuardianPhone(m.guardian_phone);
@@ -148,6 +157,7 @@ export default function MembersPage() {
         full_name: formName.trim(),
         gender: formGender,
         birth_date: formDob,
+        stage: formStage,
         current_family_id: formFamilyId,
         assigned_servant_id: formServantId || null,
         guardian_name: formGuardianName.trim(),
@@ -189,6 +199,7 @@ export default function MembersPage() {
         body: JSON.stringify({
           id: transferringMember.id,
           current_family_id: targetFamilyId,
+          stage: targetStage,
           actorRole: currentRole,
         }),
       });
@@ -204,11 +215,17 @@ export default function MembersPage() {
     }
   };
 
+  const selectedFamObj = families.find(f => f.id === familyFilter);
+  const availableFilterStages = familyFilter === 'all'
+    ? Array.from(new Set(members.map(m => m.stage).filter(Boolean))) as string[]
+    : getStagesForFamily(familyFilter, selectedFamObj?.name, selectedFamObj?.stages);
+
   const filteredMembers = members.filter(m => {
     const matchesSearch = !search || m.full_name.includes(search) || m.code.includes(search) || m.guardian_phone.includes(search);
     const matchesFamily = familyFilter === 'all' || m.current_family_id === familyFilter;
     const matchesServant = servantFilter === 'all' || m.assigned_servant_id === servantFilter;
-    return matchesSearch && matchesFamily && matchesServant;
+    const matchesStage = stageFilter === 'all' || m.stage === stageFilter;
+    return matchesSearch && matchesFamily && matchesServant && matchesStage;
   });
 
   const handleExportExcel = () => {
@@ -218,6 +235,7 @@ export default function MembersPage() {
       filteredMembers.map(m => ({
         code: m.code,
         name: m.full_name,
+        stage: m.stage || 'عام',
         gender: m.gender === 'male' ? 'ذكر' : 'أنثى',
         dob: m.birth_date,
         family: m.current_family_name || '—',
@@ -231,6 +249,7 @@ export default function MembersPage() {
       [
         { key: 'code', label: 'كود المخدوم' },
         { key: 'name', label: 'الاسم بالكامل' },
+        { key: 'stage', label: 'المرحلة الدراسية' },
         { key: 'gender', label: 'النوع' },
         { key: 'dob', label: 'تاريخ الميلاد' },
         { key: 'family', label: 'الأسرة الحالية' },
@@ -248,10 +267,11 @@ export default function MembersPage() {
     exportToPrintablePDF(
       'سجل مخدومي كنيسة الشهيد العظيم مارجرجس بسندبيس',
       'بيانات المخدومين وأولياء الأمور — العام الكنسي 2026–2027',
-      ['الكود', 'الاسم بالكامل', 'الأسرة', 'الخادم المسؤول', 'أب الاعتراف', 'ولي الأمر', 'رقم الهاتف', 'نسبة الحضور'],
+      ['الكود', 'الاسم بالكامل', 'المرحلة', 'الأسرة', 'الخادم المسؤول', 'أب الاعتراف', 'ولي الأمر', 'رقم الهاتف', 'نسبة الحضور'],
       filteredMembers.map(m => [
         m.code,
         m.full_name,
+        m.stage || 'عام',
         m.current_family_name || '—',
         m.assigned_servant_name || '—',
         m.confession_father || 'غير مسجل',
@@ -354,6 +374,23 @@ export default function MembersPage() {
                 ))}
               </select>
             </div>
+
+            {/* Stage Filter */}
+            {availableFilterStages.length > 0 && (
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="font-bold text-[#81777A]">المرحلة:</span>
+                <select
+                  value={stageFilter}
+                  onChange={(e) => setStageFilter(e.target.value)}
+                  className="p-1.5 rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] text-xs font-semibold focus:outline-none focus:border-[#702C3B]"
+                >
+                  <option value="all">كافة المراحل</option>
+                  {availableFilterStages.map(st => (
+                    <option key={st} value={st}>{st}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           <div className="relative w-full sm:w-64">
@@ -382,7 +419,17 @@ export default function MembersPage() {
                       {m.code.split('-')[1] || m.code}
                     </div>
                     <div>
-                      <h3 className="font-bold text-sm text-[#282326]">{m.full_name}</h3>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h3 className="font-bold text-sm text-[#282326]">{m.full_name}</h3>
+                        {m.stage && m.stage !== 'عام' && (() => {
+                          const badge = getStageBadgeStyle(m.stage);
+                          return (
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
+                              {m.stage}
+                            </span>
+                          );
+                        })()}
+                      </div>
                       <div className="text-[11px] text-[#81777A]">{m.current_family_name}</div>
                     </div>
                   </div>
@@ -607,12 +654,35 @@ export default function MembersPage() {
                   <label className="block font-bold text-[#282326] mb-1">اختر الأسرة الجديدة:</label>
                   <select
                     value={targetFamilyId}
-                    onChange={(e) => setTargetFamilyId(e.target.value)}
+                    onChange={(e) => {
+                      const newId = e.target.value;
+                      setTargetFamilyId(newId);
+                      const tf = families.find(f => f.id === newId);
+                      const stages = getStagesForFamily(newId, tf?.name, tf?.stages);
+                      setTargetStage(stages[0] || 'عام');
+                    }}
                     className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B]"
                   >
                     {families.map(f => (
                       <option key={f.id} value={f.id}>{f.name}</option>
                     ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#282326] mb-1">المرحلة داخل الأسرة الجديدة:</label>
+                  <select
+                    value={targetStage}
+                    onChange={(e) => setTargetStage(e.target.value)}
+                    className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B] font-bold text-[#702C3B]"
+                  >
+                    {(() => {
+                      const tf = families.find(f => f.id === targetFamilyId);
+                      const stages = getStagesForFamily(targetFamilyId, tf?.name, tf?.stages);
+                      return stages.map(st => (
+                        <option key={st} value={st}>{st}</option>
+                      ));
+                    })()}
                   </select>
                 </div>
               </div>
@@ -686,10 +756,18 @@ export default function MembersPage() {
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block font-bold text-[#282326] mb-1">الأسرة:</label>
+                    <label className="block font-bold text-[#282326] mb-1">الأسرة الكنسية:</label>
                     <select
                       value={formFamilyId}
-                      onChange={(e) => setFormFamilyId(e.target.value)}
+                      onChange={(e) => {
+                        const newFamId = e.target.value;
+                        setFormFamilyId(newFamId);
+                        const fObj = families.find(f => f.id === newFamId);
+                        const stages = getStagesForFamily(newFamId, fObj?.name, fObj?.stages);
+                        if (!stages.includes(formStage)) {
+                          setFormStage(stages[0] || 'عام');
+                        }
+                      }}
                       className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B]"
                     >
                       {families.map(f => (
@@ -698,18 +776,35 @@ export default function MembersPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block font-bold text-[#282326] mb-1">الخادم المسؤول:</label>
+                    <label className="block font-bold text-[#282326] mb-1">المرحلة الدراسية بالفصل:</label>
                     <select
-                      value={formServantId}
-                      onChange={(e) => setFormServantId(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B]"
+                      value={formStage}
+                      onChange={(e) => setFormStage(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B] font-bold text-[#702C3B]"
                     >
-                      <option value="">(اختياري - يحدد لاحقاً)</option>
-                      {servants.map(s => (
-                        <option key={s.id} value={s.id}>{s.full_name}</option>
-                      ))}
+                      {(() => {
+                        const fObj = families.find(f => f.id === formFamilyId);
+                        const stages = getStagesForFamily(formFamilyId, fObj?.name, fObj?.stages);
+                        return stages.map(st => (
+                          <option key={st} value={st}>{st}</option>
+                        ));
+                      })()}
                     </select>
                   </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#282326] mb-1">الخادم المسؤول:</label>
+                  <select
+                    value={formServantId}
+                    onChange={(e) => setFormServantId(e.target.value)}
+                    className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B]"
+                  >
+                    <option value="">(اختياري - يحدد لاحقاً)</option>
+                    {servants.map(s => (
+                      <option key={s.id} value={s.id}>{s.full_name}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">

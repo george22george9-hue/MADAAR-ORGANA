@@ -34,6 +34,7 @@ import {
   ChevronLeft,
   X
 } from 'lucide-react';
+import { getStagesForFamily, getStageBadgeStyle } from '@/lib/constants/stages';
 
 function getClosestFriday(base: Date = new Date()): string {
   const d = new Date(base);
@@ -75,6 +76,7 @@ function AttendanceContent() {
 
   const [activeTab, setActiveTab] = useState<'members' | 'servants'>('members');
   const [search, setSearch] = useState('');
+  const [stageFilter, setStageFilter] = useState<string>('all');
 
   // Attendance Records
   const [membersAttendance, setMembersAttendance] = useState<any[]>([]);
@@ -320,9 +322,14 @@ function AttendanceContent() {
   const absentServants = servantsAttendance.filter(s => s.status === 'absent').length;
   const excusedServants = servantsAttendance.filter(s => s.status === 'excused').length;
 
-  const filteredMembers = membersAttendance.filter(m =>
-    !search || m.member_name?.includes(search) || m.code?.includes(search)
-  );
+  const selectedFamily = families.find(f => f.id === selectedFamilyId);
+  const currentFamilyStages = selectedFamily?.stages || getStagesForFamily(selectedFamilyId, selectedFamily?.name);
+
+  const filteredMembers = membersAttendance.filter(m => {
+    const matchesSearch = !search || m.member_name?.includes(search) || m.code?.includes(search);
+    const matchesStage = stageFilter === 'all' || m.stage === stageFilter;
+    return matchesSearch && matchesStage;
+  });
 
   const filteredServants = servantsAttendance.filter(s =>
     !search || s.servant_name?.includes(search) || s.phone?.includes(search)
@@ -679,6 +686,40 @@ function AttendanceContent() {
         {/* ============================================================== */}
         {activeTab === 'members' && (
           <div className="space-y-3">
+            {/* Stage filter pills for current family */}
+            {currentFamilyStages.length > 1 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                <button
+                  type="button"
+                  onClick={() => setStageFilter('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                    stageFilter === 'all'
+                      ? 'bg-[#702C3B] text-white shadow-xs'
+                      : 'bg-white border border-[#EAE3E4] text-[#421923] hover:bg-[#FAF5F6]'
+                  }`}
+                >
+                  كافة المراحل ({membersAttendance.length})
+                </button>
+                {currentFamilyStages.map(st => {
+                  const count = membersAttendance.filter(m => m.stage === st).length;
+                  return (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setStageFilter(st)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                        stageFilter === st
+                          ? 'bg-[#702C3B] text-white shadow-xs'
+                          : 'bg-white border border-[#EAE3E4] text-[#421923] hover:bg-[#FAF5F6]'
+                      }`}
+                    >
+                      {st} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {filteredMembers.length === 0 ? (
               <div className="text-center py-8 bg-white rounded-3xl border border-[#EAE3E4] text-xs text-[#81777A] p-4">
                 لا يوجد مخدومين مسجلين في هذه الأسرة حالياً. يمكنك إضافة مخدومين من صفحة «المخدومون».
@@ -697,13 +738,21 @@ function AttendanceContent() {
                     {/* Top Row: Code Pill + Name + Status */}
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="px-2 py-0.5 rounded-lg bg-gray-100 text-gray-700 text-xs font-mono font-bold border border-gray-200">
                             {m.code ? (m.code.includes('-') ? m.code.split('-')[1] : m.code) : '—'}
                           </span>
                           <h3 className="font-bold text-sm md:text-base text-[#282326]">
                             {m.member_name}
                           </h3>
+                          {m.stage && m.stage !== 'عام' && (() => {
+                            const badge = getStageBadgeStyle(m.stage);
+                            return (
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
+                                {m.stage}
+                              </span>
+                            );
+                          })()}
                         </div>
 
                         {/* Confession Father & Servant */}

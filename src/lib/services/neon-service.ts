@@ -20,6 +20,7 @@ import {
   AbsenceAlert,
   ChurchNotification,
 } from '@/types/organa';
+import { getStagesForFamily } from '@/lib/constants/stages';
 
 export function isNeonConfigured(): boolean {
   // Always use Neon Cloud PostgreSQL for 100% persistent data across all deployments & Vercel
@@ -463,6 +464,7 @@ export async function getFamiliesPg(): Promise<Family[]> {
   `);
   return rows.map(r => ({
     ...r,
+    stages: getStagesForFamily(r.id, r.name, r.stages),
     leader_name: r.leader_name || null,
     leader_phone: r.leader_phone || null,
   }));
@@ -475,7 +477,12 @@ export async function getFamilyByIdPg(id: string): Promise<Family | null> {
     LEFT JOIN users u ON f.leader_id = u.id
     WHERE f.id = $1
   `, [id]);
-  return row ? { ...row, leader_name: row.leader_name || null, leader_phone: row.leader_phone || null } : null;
+  return row ? { 
+    ...row, 
+    stages: getStagesForFamily(row.id, row.name, row.stages),
+    leader_name: row.leader_name || null, 
+    leader_phone: row.leader_phone || null 
+  } : null;
 }
 
 export async function createFamilyPg(data: {
@@ -488,13 +495,15 @@ export async function createFamilyPg(data: {
   location?: string;
   description?: string;
   color_code?: string;
+  stages?: string[];
 }): Promise<Family> {
   const id = `fam-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const academicYearId = data.academic_year_id || 'ay-2026-2027';
+  const stages = data.stages || getStagesForFamily(id, data.name);
 
   await queryPg(`
-    INSERT INTO families (id, name, type, leader_id, academic_year_id, meeting_day, meeting_time, location, description, color_code, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now())
+    INSERT INTO families (id, name, type, leader_id, academic_year_id, meeting_day, meeting_time, location, description, color_code, stages, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
   `, [
     id,
     data.name.trim(),
@@ -506,6 +515,7 @@ export async function createFamilyPg(data: {
     data.location || null,
     data.description || null,
     data.color_code || '#702C3B',
+    stages,
   ]);
 
   return (await getFamilyByIdPg(id))!;
@@ -513,7 +523,7 @@ export async function createFamilyPg(data: {
 
 export async function updateFamilyPg(
   id: string,
-  data: Partial<Family> & { leader_id?: string }
+  data: Partial<Family> & { leader_id?: string; stages?: string[] }
 ): Promise<Family | null> {
   await queryPg(`
     UPDATE families SET
@@ -525,8 +535,9 @@ export async function updateFamilyPg(
       meeting_time = COALESCE($6, meeting_time),
       location = COALESCE($7, location),
       leader_id = COALESCE($8, leader_id),
+      stages = CASE WHEN $9::text[] IS NOT NULL THEN $9 ELSE stages END,
       updated_at = now()
-    WHERE id = $9
+    WHERE id = $10
   `, [
     data.name || null,
     data.type || null,
@@ -536,6 +547,7 @@ export async function updateFamilyPg(
     data.meeting_time || null,
     data.location || null,
     data.leader_id || null,
+    data.stages || null,
     id,
   ]);
 
@@ -1155,6 +1167,7 @@ export async function getMeetingAttendancePg(meetingId: string): Promise<{
       COALESCE(ma.attended_confession, 0) as attended_confession,
       sm.full_name as member_name, 
       sm.code, 
+      sm.stage,
       sm.guardian_phone,
       sm.confession_father,
       s.full_name as assigned_servant_name
