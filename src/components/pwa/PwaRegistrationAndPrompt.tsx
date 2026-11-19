@@ -73,6 +73,20 @@ export function PwaRegistrationAndPrompt() {
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
+    // 5. Global custom event to trigger install prompt manually from Settings or Menu
+    const handleManualTrigger = () => {
+      const userAgent = window.navigator.userAgent.toLowerCase();
+      const isIosDevice = /iphone|ipad|ipod/.test(userAgent);
+      if (isIosDevice) {
+        setShowIosGuide(true);
+      } else if (deferredPrompt) {
+        deferredPrompt.prompt();
+      } else {
+        setShowPrompt(true);
+      }
+    };
+    window.addEventListener('organa-trigger-pwa-install', handleManualTrigger);
+
     window.addEventListener('appinstalled', () => {
       setInstalledSuccess(true);
       setShowPrompt(false);
@@ -82,8 +96,9 @@ export function PwaRegistrationAndPrompt() {
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('organa-trigger-pwa-install', handleManualTrigger);
     };
-  }, []);
+  }, [deferredPrompt]);
 
   const handleInstallClick = async () => {
     if (!deferredPrompt) return;

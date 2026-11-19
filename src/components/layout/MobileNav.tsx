@@ -23,7 +23,9 @@ import {
   FolderTree,
   BarChart3,
   LogOut,
-  GraduationCap
+  GraduationCap,
+  Smartphone,
+  Download
 } from 'lucide-react';
 
 interface MobileNavProps {
@@ -50,10 +52,10 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
     if (currentRole === 'priest') {
       return [
         { href: '/dashboard', label: 'الرعاية', icon: LayoutDashboard },
+        { href: '/alerts', label: 'الافتقاد', icon: AlertTriangle },
         { href: '/attendance/servants', label: 'غياب الخدام', icon: UserCheck },
-        { href: '/alerts', label: 'غياب المخدومين', icon: AlertTriangle },
         { href: '/notebooks', label: 'الكشاكيل', icon: BookOpen },
-        { href: '/users', label: 'الخدام الجدد', icon: ShieldCheck },
+        { href: '/settings', label: 'الإعدادات', icon: Settings },
       ];
     }
     if (currentRole === 'service_secretary') {
@@ -226,8 +228,21 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
           })}
         </div>
 
-        {/* Logout button */}
-        <div className="p-3 border-t border-[#EAE3E4]">
+        {/* PWA Install Shortcut & Logout */}
+        <div className="p-3 border-t border-[#EAE3E4] space-y-2">
+          <button
+            onClick={() => {
+              onClose();
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('organa-trigger-pwa-install'));
+              }
+            }}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold text-[#702C3B] bg-[#FAF5F6] border border-[#702C3B]/20 hover:bg-[#F3E8EB] transition-colors"
+          >
+            <Smartphone className="w-4 h-4 text-[#702C3B]" />
+            <span>تثبيت التطبيق على الشاشة الرئيسية</span>
+          </button>
+
           <button
             onClick={handleLogout}
             className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 transition-colors"

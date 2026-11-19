@@ -19,7 +19,13 @@ import {
   ShieldCheck,
   KeyRound,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Smartphone,
+  Download,
+  Bell,
+  BellRing,
+  Share,
+  PlusSquare
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -293,6 +299,78 @@ export default function SettingsPage() {
             </div>
           )}
         </form>
+
+        {/* Mobile App (PWA) & Notifications Card */}
+        <div className="bg-gradient-to-br from-[#FAF5F6] to-white rounded-2xl border-2 border-[#702C3B]/20 shadow-sm p-6 space-y-4 text-xs">
+          <div className="flex items-center justify-between border-b border-[#EAE3E4] pb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-[#702C3B] text-white flex items-center justify-center font-bold text-sm shadow-xs">
+                <Smartphone className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-[#421923]">تطبيق أورجانا على الموبايل والإشعارات</h2>
+                <p className="text-[11px] text-[#81777A]">تشغيل المنظومة كتطبيق أصلي سريع واستقبال إشعارات المهام</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+            {/* Install Card */}
+            <div className="p-4 rounded-xl bg-white border border-[#EAE3E4] flex flex-col justify-between space-y-3">
+              <div>
+                <strong className="block text-sm text-[#282326] font-bold">تثبيت التطبيق على الشاشة الرئيسية</strong>
+                <p className="text-[11px] text-[#81777A] mt-1 leading-relaxed">
+                  يمنحك تجربة سريعة بملء الشاشة دون الحاجة لكتابة الرابط، مع دعم التشغيل وحفظ مسودات الحضور حتى عند ضعف شبكة الإنترنت داخل الكنيسة.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('organa-trigger-pwa-install'));
+                  }
+                }}
+                className="w-full py-2.5 px-3 rounded-xl bg-[#702C3B] hover:bg-[#5A1E2D] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                <span>تثبيت التطبيق على جهازي الآن</span>
+              </button>
+            </div>
+
+            {/* Notifications Card */}
+            <div className="p-4 rounded-xl bg-white border border-[#EAE3E4] flex flex-col justify-between space-y-3">
+              <div>
+                <strong className="block text-sm text-[#282326] font-bold">إشعارات الافتقاد اللحظية</strong>
+                <p className="text-[11px] text-[#81777A] mt-1 leading-relaxed">
+                  استقبال تنبيهات فورية على شاشة قفل الهاتف عند تكليفك بافتقاد مخدوم غائب أو اعتماد تقارير خدمتك.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (typeof window !== 'undefined' && 'Notification' in window) {
+                    try {
+                      const perm = await Notification.requestPermission();
+                      if (perm === 'granted') {
+                        alert('✅ تم تفعيل إشعارات الموبايل بنجاح!');
+                      } else {
+                        alert('⚠️ يرجى السماح بالإشعارات من إعدادات المتصفح.');
+                      }
+                    } catch (e) {
+                      alert('تعذر تفعيل الإشعارات على هذا المتصفح.');
+                    }
+                  } else {
+                    alert('المتصفح لا يدعم الإشعارات.');
+                  }
+                }}
+                className="w-full py-2.5 px-3 rounded-xl bg-[#5A1E2D] hover:bg-[#421923] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-colors"
+              >
+                <BellRing className="w-4 h-4 text-amber-300" />
+                <span>تفعيل إشعارات شاشة القفل</span>
+              </button>
+            </div>
+          </div>
+        </div>
 
         {/* Change Password Card */}
         <div className="bg-white rounded-2xl border border-[#EAE3E4] shadow-sm p-6 space-y-4 text-xs">

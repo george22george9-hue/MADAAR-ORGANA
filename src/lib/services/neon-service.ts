@@ -1881,9 +1881,26 @@ export async function getDashboardDataPg(role: string = 'admin', familyId?: stri
     SELECT f.id, f.name, f.type, f.color_code,
            (SELECT COUNT(*) FROM served_members WHERE current_family_id = f.id AND is_active = true) as members_count,
            (SELECT COUNT(*) FROM family_servants WHERE family_id = f.id) as servants_count,
-           (SELECT COUNT(*) FROM weekly_reports WHERE family_id = f.id AND status = 'approved') as approved_reports
+           (SELECT COUNT(*) FROM weekly_reports WHERE family_id = f.id AND status = 'approved') as approved_reports,
+           (SELECT COUNT(*) FROM absence_alerts WHERE family_id = f.id AND status = 'pending_followup') as open_alerts,
+           (SELECT COUNT(*) FROM meetings WHERE family_id = f.id AND status = 'completed') as completed_meetings
     FROM families f
     ORDER BY f.id ASC
+  `);
+
+  // Urgent high-risk pastoral cases for Priest and Admin
+  const urgentCases = await queryPg(`
+    SELECT a.id, a.member_id, a.family_id, a.consecutive_absences_count, a.risk_category, a.priority_score, a.priority_tier, a.detection_reason, a.created_at,
+           m.full_name as member_name, m.code as member_code, m.stage as member_stage, m.phone as member_phone, m.guardian_name, m.guardian_phone,
+           f.name as family_name,
+           s.full_name as assigned_servant_name, s.phone as assigned_servant_phone
+    FROM absence_alerts a
+    JOIN served_members m ON a.member_id = m.id
+    LEFT JOIN families f ON a.family_id = f.id
+    LEFT JOIN servants s ON a.assigned_servant_id = s.id
+    WHERE a.status = 'pending_followup'
+    ORDER BY a.priority_score DESC, a.consecutive_absences_count DESC
+    LIMIT 10
   `);
 
   const pendingRequests = await queryOnePg<{ c: string }>(`
@@ -1955,6 +1972,8 @@ export async function getDashboardDataPg(role: string = 'admin', familyId?: stri
     members_count: Number(f.members_count || 0),
     servants_count: Number(f.servants_count || 0),
     approved_reports: Number(f.approved_reports || 0),
+    open_alerts: Number(f.open_alerts || 0),
+    completed_meetings: Number(f.completed_meetings || 0),
   }));
 
   return {
@@ -1973,6 +1992,12 @@ export async function getDashboardDataPg(role: string = 'admin', familyId?: stri
     absentCount: absent,
     excusedCount: excused,
     familyStats: formattedFamilyStats,
+    urgentPastoralCases: urgentCases.map(c => ({
+      ...c,
+      consecutive_absences_count: Number(c.consecutive_absences_count || 0),
+      priority_score: Number(c.priority_score || 0),
+      created_at: c.created_at instanceof Date ? c.created_at.toISOString().split('T')[0] : String(c.created_at || '').split('T')[0],
+    })),
     pendingReports: pendingReports.map(r => ({
       ...r,
       meeting_date: r.meeting_date instanceof Date ? r.meeting_date.toISOString().split('T')[0] : String(r.meeting_date || '').split('T')[0],
