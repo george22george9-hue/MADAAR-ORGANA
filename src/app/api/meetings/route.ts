@@ -1,29 +1,43 @@
+// ====================================================================
+// ORGANA — Meetings API (/api/meetings)
+// RBAC-Protected & Validated Server-Side Operations
+// The Great Martyr St. George Church – Sandbees, Egypt
+// ====================================================================
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getMeetings, createMeeting } from '@/lib/services/organa-service';
-import { isNeonConfigured, getMeetingsPg, createMeetingPg } from '@/lib/services/neon-service';
-import { INITIAL_PERSONAS } from '@/lib/constants/personas';
-import { UserRole } from '@/types/organa';
+import { isNeonConfigured, getMeetingsPg, createMeetingPg, logAuditActionPg } from '@/lib/services/neon-service';
+import { authenticateRequest, canAccessFamily, canManageAll } from '@/lib/auth/server-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const familyId = searchParams.get('familyId') || undefined;
-    const date = searchParams.get('date') || undefined;
-    const role = (searchParams.get('role') as UserRole) || 'priest';
-    let userFamilyId = searchParams.get('userFamilyId') || searchParams.get('familyId') || undefined;
-    if ((role === 'servant' || role === 'family_leader') && !userFamilyId) {
-      userFamilyId = INITIAL_PERSONAS[role]?.assigned_family_id || undefined;
+    const auth = await authenticateRequest(request);
+    if (!auth.user) {
+      return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
     }
 
+    const { searchParams } = new URL(request.url);
+    const requestedFamilyId = searchParams.get('familyId') || undefined;
+    const date = searchParams.get('date') || undefined;
+
+    // RBAC: Check family access
+    if (requestedFamilyId && !canAccessFamily(auth.user, requestedFamilyId)) {
+      return NextResponse.json(
+        { success: false, error: 'غير مصرح لك بعرض اجتماعات هذه الأسرة (Forbidden Family Access)' },
+        { status: 403 }
+      );
+    }
+
+    const targetFamily = requestedFamilyId || (canManageAll(auth.user) ? undefined : auth.user.assigned_family_id || undefined);
+
     if (isNeonConfigured()) {
-      const targetFamily = (role === 'servant' || role === 'family_leader') ? userFamilyId : familyId;
       const meetings = await getMeetingsPg(targetFamily, date);
       return NextResponse.json({ success: true, meetings });
     }
 
-    const meetings = getMeetings({ familyId, userRole: role, userFamilyId });
+    const meetings = getMeetings({ familyId: targetFamily, userRole: auth.user.role, userFamilyId: auth.user.assigned_family_id || undefined });
     return NextResponse.json({ success: true, meetings });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
@@ -32,16 +46,49 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await authenticateRequest(request);
+    if (!auth.user) {
+      return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+    }
+
     const body = await request.json();
-    const actorRole = (body.actorRole as UserRole) || 'family_leader';
-    const actor = INITIAL_PERSONAS[actorRole];
+
+    // Validation
+    if (!body.title || !body.family_id || !body.date) {
+      return NextResponse.json(
+        { success: false, error: 'يرجى إدخال عنوان وتاريخ والأسرة التابع لها الاجتماع' },
+        { status: 400 }
+      );
+    }
+
+    // RBAC: Can this user create a meeting for this family?
+    if (!canAccessFamily(auth.user, body.family_id)) {
+      return NextResponse.json(
+        { success: false, error: 'غير مصرح لك بإنشاء اجتماع لأسرة أخرى (Forbidden)' },
+        { status: 403 }
+      );
+    }
 
     if (isNeonConfigured()) {
-      const meeting = await createMeetingPg(body);
+      const meeting = await createMeetingPg({
+        ...body,
+        created_by: auth.user.id,
+      });
+
+      await logAuditActionPg(
+        { id: auth.user.id, name: auth.user.full_name, role: auth.user.role },
+        'CREATE_MEETING',
+        'meeting',
+        meeting.id,
+        `إنشاء اجتماع جديد: ${meeting.title}`,
+        null,
+        meeting
+      );
+
       return NextResponse.json({ success: true, meeting });
     }
 
-    const meeting = createMeeting(body, actor);
+    const meeting = createMeeting(body, auth.user);
     return NextResponse.json({ success: true, meeting });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

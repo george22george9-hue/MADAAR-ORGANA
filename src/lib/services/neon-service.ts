@@ -1356,6 +1356,12 @@ export async function bulkSaveMemberAttendancePg(
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    // Fetch meeting context for historical snapshotting
+    const meetingRes = await client.query(`SELECT family_id, academic_year_id FROM meetings WHERE id = $1`, [meetingId]);
+    const meetingFamilyId = meetingRes.rows[0]?.family_id || null;
+    const meetingYearId = meetingRes.rows[0]?.academic_year_id || null;
+
     for (const r of records) {
       const memberId = r.memberId || r.member_id;
       if (!memberId) continue;
@@ -1367,11 +1373,31 @@ export async function bulkSaveMemberAttendancePg(
       const attendedConfession = (r.attended_confession || r.attendedConfession) ? 1 : 0;
       const excuse = r.excuse_reason || r.excuseReason || null;
 
+      // Determine stage_at_time accurately from member_academic_history without unverified guessing
+      let stageAtTime: string | null = null;
+      if (meetingYearId) {
+        const histRes = await client.query(`
+          SELECT stage FROM member_academic_history
+          WHERE member_id = $1 AND academic_year_id = $2
+        `, [memberId, meetingYearId]);
+        stageAtTime = histRes.rows[0]?.stage || null;
+
+        if (!stageAtTime) {
+          const curRes = await client.query(`
+            SELECT sm.stage FROM served_members sm
+            JOIN system_settings ss ON ss.id = 'default' AND ss.active_academic_year_id = $2
+            WHERE sm.id = $1
+          `, [memberId, meetingYearId]);
+          stageAtTime = curRes.rows[0]?.stage || null;
+        }
+      }
+
       await client.query(`
         INSERT INTO meeting_attendance (
           id, meeting_id, member_id, status, attended_liturgy, attended_communion,
-          attended_class, attended_confession, excuse_reason, recorded_by, recorded_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+          attended_class, attended_confession, excuse_reason, recorded_by, recorded_at,
+          family_id_at_time, stage_at_time, academic_year_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), $11, $12, $13)
         ON CONFLICT (meeting_id, member_id) DO UPDATE SET
           status = EXCLUDED.status,
           attended_liturgy = EXCLUDED.attended_liturgy,
@@ -1392,6 +1418,9 @@ export async function bulkSaveMemberAttendancePg(
         attendedConfession,
         excuse,
         recorder.name,
+        meetingFamilyId,
+        stageAtTime,
+        meetingYearId,
       ]);
     }
     await client.query('COMMIT');
@@ -1937,7 +1966,7 @@ export async function getFollowupTasksPg(servantId?: string): Promise<any[]> {
   const params: any[] = [];
   if (servantId) {
     params.push(servantId);
-    sql += ` AND ft.assigned_to = $${params.length}`;
+    sql += ` AND ft.servant_id = $${params.length}`;
   }
   sql += ` ORDER BY ft.created_at DESC`;
   return queryPg(sql, params);
@@ -3031,11 +3060,9 @@ export async function recordMeetingServantRolesPg(
       }
     }
 
-    if (lessonTeacherId) {
-      await client.query(`
-        UPDATE meetings SET lesson_teacher_id = $2, updated_at = now() WHERE id = $1
-      `, [meetingId, lessonTeacherId]);
-    }
+    await client.query(`
+      UPDATE meetings SET lesson_teacher_id = $2, updated_at = now() WHERE id = $1
+    `, [meetingId, lessonTeacherId]);
 
     await client.query('COMMIT');
     return true;
@@ -3096,6 +3123,13 @@ export async function addFollowupContactLogPg(
     const currentTask = taskRes.rows[0];
     const logId = `fcl-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
 
+    // Resolve valid servant_id if actor is an admin/priest without dedicated servant profile
+    let effectiveServantId = entry.servant_id || currentTask.servant_id;
+    const srvCheck = await client.query(`SELECT id FROM servants WHERE id = $1`, [effectiveServantId]);
+    if (srvCheck.rows.length === 0) {
+      effectiveServantId = currentTask.servant_id;
+    }
+
     // 2. Insert append-only contact log
     await client.query(`
       INSERT INTO followup_contact_logs (
@@ -3106,7 +3140,7 @@ export async function addFollowupContactLogPg(
     `, [
       logId,
       taskId,
-      entry.servant_id,
+      effectiveServantId,
       entry.contact_date,
       entry.contact_method,
       entry.outcome,
@@ -3164,9 +3198,10 @@ export async function addFollowupContactLogPg(
 
 export async function getFollowupContactLogsPg(taskId: string): Promise<FollowupContactLog[]> {
   const sql = `
-    SELECT fcl.*, s.full_name as servant_name
+    SELECT fcl.*, COALESCE(s.full_name, u.full_name, fcl.created_by) as servant_name
     FROM followup_contact_logs fcl
-    JOIN servants s ON fcl.servant_id = s.id
+    LEFT JOIN servants s ON fcl.servant_id = s.id
+    LEFT JOIN users u ON fcl.created_by = u.id
     WHERE fcl.task_id = $1
     ORDER BY fcl.contact_time ASC
   `;

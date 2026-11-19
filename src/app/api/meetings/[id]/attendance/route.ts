@@ -1,3 +1,9 @@
+// ====================================================================
+// ORGANA — Meeting Attendance API (/api/meetings/[id]/attendance)
+// The Great Martyr St. George Church – Sandbees, Egypt
+// RBAC-Protected & Audit-Logged Attendance Endpoint
+// ====================================================================
+
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getMeetingAttendance,
@@ -8,12 +14,13 @@ import {
 } from '@/lib/services/organa-service';
 import {
   isNeonConfigured,
+  getMeetingByIdPg,
   getMeetingAttendancePg,
   bulkSaveMemberAttendancePg,
   bulkSaveServantAttendancePg,
+  logAuditActionPg,
 } from '@/lib/services/neon-service';
-import { INITIAL_PERSONAS } from '@/lib/constants/personas';
-import { UserRole } from '@/types/organa';
+import { authenticateRequest, canAccessFamily } from '@/lib/auth/server-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,19 +29,33 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { searchParams } = new URL(request.url);
-    const role = (searchParams.get('role') as UserRole) || 'priest';
-    let userFamilyId = searchParams.get('userFamilyId') || searchParams.get('familyId') || undefined;
-    if ((role === 'servant' || role === 'family_leader') && !userFamilyId) {
-      userFamilyId = INITIAL_PERSONAS[role]?.assigned_family_id || undefined;
+    const auth = await authenticateRequest(request);
+    if (!auth.user) {
+      return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
     }
 
     if (isNeonConfigured()) {
+      const meeting = await getMeetingByIdPg(params.id);
+      if (!meeting) {
+        return NextResponse.json({ success: false, error: 'الاجتماع غير موجود (Meeting not found)' }, { status: 404 });
+      }
+
+      // RBAC: Verify user has permission to view this meeting's attendance
+      if (!canAccessFamily(auth.user, meeting.family_id)) {
+        return NextResponse.json(
+          { success: false, error: 'غير مصرح لك بعرض كشف حضور هذه الأسرة (Forbidden)' },
+          { status: 403 }
+        );
+      }
+
       const data = await getMeetingAttendancePg(params.id);
       return NextResponse.json({ success: true, ...data });
     }
 
-    const data = getMeetingAttendance(params.id, { userRole: role, userFamilyId });
+    const data = getMeetingAttendance(params.id, {
+      userRole: auth.user.role,
+      userFamilyId: auth.user.assigned_family_id || undefined,
+    });
     return NextResponse.json({ success: true, ...data });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
@@ -46,15 +67,41 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await authenticateRequest(request);
+    if (!auth.user) {
+      return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+    }
+
     const body = await request.json();
-    const actorRole = (body.actorRole as UserRole) || 'family_leader';
-    const actor = INITIAL_PERSONAS[actorRole] || { id: 'usr-admin', full_name: 'إدارة المنظومة' };
 
     if (isNeonConfigured()) {
+      const meeting = await getMeetingByIdPg(params.id);
+      if (!meeting) {
+        return NextResponse.json({ success: false, error: 'الاجتماع غير موجود (Meeting not found)' }, { status: 404 });
+      }
+
+      // RBAC: Cannot record attendance if user doesn't belong to this family or have church-wide admin rights
+      if (!canAccessFamily(auth.user, meeting.family_id)) {
+        return NextResponse.json(
+          { success: false, error: 'غير مصرح لك بتسجيل الحضور لأسرة أخرى (Forbidden)' },
+          { status: 403 }
+        );
+      }
+
+      // Validate meeting is not cancelled
+      if (meeting.status === 'cancelled') {
+        return NextResponse.json(
+          { success: false, error: 'لا يمكن تسجيل الحضور لاجتماع ملغى (Meeting Cancelled)' },
+          { status: 400 }
+        );
+      }
+
+      const recorder = { id: auth.user.id, name: auth.user.full_name };
+
       if (body.type === 'bulk_members') {
-        await bulkSaveMemberAttendancePg(params.id, body.records, { id: actor.id, name: actor.full_name });
+        await bulkSaveMemberAttendancePg(params.id, body.records, recorder);
       } else if (body.type === 'bulk_servants') {
-        await bulkSaveServantAttendancePg(params.id, body.records, { id: actor.id, name: actor.full_name });
+        await bulkSaveServantAttendancePg(params.id, body.records, recorder);
       } else if (body.type === 'single_member') {
         await bulkSaveMemberAttendancePg(params.id, [{
           memberId: body.memberId,
@@ -64,7 +111,7 @@ export async function POST(
           attendedCommunion: body.details?.attended_communion,
           attendedClass: body.details?.attended_class,
           attendedConfession: body.details?.attended_confession,
-        }], { id: actor.id, name: actor.full_name });
+        }], recorder);
       } else if (body.type === 'single_servant') {
         await bulkSaveServantAttendancePg(params.id, [{
           servantId: body.servantId,
@@ -74,19 +121,30 @@ export async function POST(
           didWorkshop: body.details?.did_workshop,
           didPreparation: body.details?.did_preparation,
           didLesson: body.details?.did_lesson,
-        }], { id: actor.id, name: actor.full_name });
+        }], recorder);
       }
+
+      await logAuditActionPg(
+        { id: auth.user.id, name: auth.user.full_name, role: auth.user.role },
+        'SAVE_ATTENDANCE',
+        'meeting_attendance',
+        params.id,
+        `حفظ سجل حضور الاجتماع (${meeting.title}) بنوع: ${body.type}`,
+        null,
+        { recordCount: body.records?.length || 1, type: body.type }
+      );
+
       return NextResponse.json({ success: true });
     }
 
     if (body.type === 'bulk_members') {
-      bulkSaveMemberAttendance(params.id, body.records, actor);
+      bulkSaveMemberAttendance(params.id, body.records, auth.user);
     } else if (body.type === 'bulk_servants') {
-      bulkSaveServantAttendance(params.id, body.records, actor);
+      bulkSaveServantAttendance(params.id, body.records, auth.user);
     } else if (body.type === 'single_member') {
-      recordMemberAttendance(params.id, body.memberId, body.status, body.excuseReason || null, actor, body.details);
+      recordMemberAttendance(params.id, body.memberId, body.status, body.excuseReason || null, auth.user, body.details);
     } else if (body.type === 'single_servant') {
-      recordServantAttendance(params.id, body.servantId, body.status, body.excuseReason || null, actor, body.details);
+      recordServantAttendance(params.id, body.servantId, body.status, body.excuseReason || null, auth.user, body.details);
     }
 
     return NextResponse.json({ success: true });
