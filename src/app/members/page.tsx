@@ -27,11 +27,17 @@ import {
   AlertTriangle,
   X,
   ChevronLeft,
-  Trash2
+  Trash2,
+  MessageCircle,
+  Cake,
+  CheckCircle2
 } from 'lucide-react';
 import { exportToExcel } from '@/lib/export/excel';
 import { exportToPrintablePDF } from '@/lib/export/pdf';
 import { getStagesForFamily, getStageBadgeStyle } from '@/lib/constants/stages';
+import { getWhatsAppUrl, getPastoralVisitationMessage, getBirthdayGreetingMessage } from '@/lib/utils/whatsapp';
+import { getBirthdayInfo } from '@/lib/utils/birthdays';
+import { exportFridayAttendanceSheet } from '@/lib/export/attendance-sheet';
 
 export default function MembersPage() {
   const { currentRole, canManageAllFamilies, assignedFamilyId } = useAuth();
@@ -45,6 +51,8 @@ export default function MembersPage() {
   const [familyFilter, setFamilyFilter] = useState<string>('all');
   const [servantFilter, setServantFilter] = useState<string>('all');
   const [stageFilter, setStageFilter] = useState<string>('all');
+  const [absenceFilter, setAbsenceFilter] = useState(false);
+  const [birthdayFilter, setBirthdayFilter] = useState(false);
 
   // Modals & Drawers
   const [viewingMember, setViewingMember] = useState<ServedMember | null>(null);
@@ -220,12 +228,28 @@ export default function MembersPage() {
     ? Array.from(new Set(members.map(m => m.stage).filter(Boolean))) as string[]
     : getStagesForFamily(familyFilter, selectedFamObj?.name, selectedFamObj?.stages);
 
+  const totalCount = members.length;
+  const regularCount = members.filter(m => !m.consecutive_absences || m.consecutive_absences === 0).length;
+  const criticalAbsenceCount = members.filter(m => (m.consecutive_absences || 0) >= 2).length;
+  const birthdaysThisMonthCount = members.filter(m => {
+    const info = getBirthdayInfo(m.birth_date);
+    return Boolean(info?.isThisMonth);
+  }).length;
+
   const filteredMembers = members.filter(m => {
-    const matchesSearch = !search || m.full_name.includes(search) || m.code.includes(search) || m.guardian_phone.includes(search);
+    const matchesSearch = !search || 
+      m.full_name.includes(search) || 
+      m.code.toLowerCase().includes(search.toLowerCase()) || 
+      (m.phone && m.phone.includes(search)) || 
+      (m.guardian_phone && m.guardian_phone.includes(search));
     const matchesFamily = familyFilter === 'all' || m.current_family_id === familyFilter;
     const matchesServant = servantFilter === 'all' || m.assigned_servant_id === servantFilter;
     const matchesStage = stageFilter === 'all' || m.stage === stageFilter;
-    return matchesSearch && matchesFamily && matchesServant && matchesStage;
+    const matchesAbsence = !absenceFilter || (m.consecutive_absences || 0) >= 2;
+    const bdayInfo = getBirthdayInfo(m.birth_date);
+    const matchesBirthday = !birthdayFilter || Boolean(bdayInfo?.isThisMonth);
+
+    return matchesSearch && matchesFamily && matchesServant && matchesStage && matchesAbsence && matchesBirthday;
   });
 
   const handleExportExcel = () => {
@@ -319,6 +343,21 @@ export default function MembersPage() {
 
           <div className="flex items-center gap-2 flex-wrap">
             <button
+              onClick={() => {
+                const currentFamObj = families.find(f => f.id === familyFilter);
+                exportFridayAttendanceSheet({
+                  familyName: currentFamObj?.name || (familyFilter === 'all' ? 'كافة الأسر' : familyFilter),
+                  stageName: stageFilter !== 'all' ? stageFilter : undefined,
+                  members: filteredMembers,
+                });
+              }}
+              className="px-3.5 py-2 rounded-xl bg-amber-50 border border-amber-300 text-xs font-bold text-amber-900 hover:bg-amber-100 flex items-center gap-1.5 transition-colors shadow-xs active:scale-95"
+              title="توليد وطباعة كشف حضور ورقي A4 للجمعة"
+            >
+              <Printer className="w-4 h-4 text-amber-800" />
+              <span>كشف حضور ورقي للجمعة 📄</span>
+            </button>
+            <button
               onClick={handleExportExcel}
               className="px-3 py-2 rounded-xl border border-[#EAE3E4] text-xs font-bold text-[#282326] hover:bg-[#FAF5F6] flex items-center gap-1.5 transition-colors"
             >
@@ -339,6 +378,60 @@ export default function MembersPage() {
               <Plus className="w-4 h-4" />
               <span>تسجيل مخدوم جديد</span>
             </button>
+          </div>
+        </div>
+
+        {/* Quick Pastoral Metric Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div 
+            onClick={() => { setAbsenceFilter(false); setBirthdayFilter(false); }}
+            className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${!absenceFilter && !birthdayFilter ? 'bg-[#FAF5F6] border-[#702C3B]/40 ring-1 ring-[#702C3B]/30' : 'bg-white border-[#EAE3E4] hover:border-[#702C3B]/20'}`}
+          >
+            <div className="text-[11px] text-[#81777A] font-medium flex items-center justify-between">
+              <span>إجمالي المخدومين</span>
+              <Users className="w-4 h-4 text-[#702C3B]" />
+            </div>
+            <div className="text-xl font-bold text-[#421923] mt-1">{totalCount}</div>
+            <div className="text-[10px] text-[#81777A] mt-0.5">عرض الكل بدون فلترة</div>
+          </div>
+
+          <div 
+            className="p-3.5 rounded-2xl bg-white border border-[#EAE3E4]"
+          >
+            <div className="text-[11px] text-emerald-700 font-medium flex items-center justify-between">
+              <span>المنتظمون بالخدمة</span>
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            </div>
+            <div className="text-xl font-bold text-emerald-700 mt-1">{regularCount}</div>
+            <div className="text-[10px] text-emerald-600/80 mt-0.5">نسبة الحضور ممتازة</div>
+          </div>
+
+          <div 
+            onClick={() => { setAbsenceFilter(prev => !prev); setBirthdayFilter(false); }}
+            className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${absenceFilter ? 'bg-amber-50 border-amber-400 ring-2 ring-amber-400/40' : 'bg-white border-[#EAE3E4] hover:border-amber-300'}`}
+          >
+            <div className="text-[11px] text-amber-800 font-bold flex items-center justify-between">
+              <span>حالات افتقاد عاجل</span>
+              <AlertTriangle className="w-4 h-4 text-amber-600" />
+            </div>
+            <div className="text-xl font-bold text-amber-800 mt-1">{criticalAbsenceCount}</div>
+            <div className="text-[10px] text-amber-700/80 mt-0.5">
+              {absenceFilter ? '✓ مفعل (غياب 2+ أسابيع)' : 'اضغط للفلترة السريعة'}
+            </div>
+          </div>
+
+          <div 
+            onClick={() => { setBirthdayFilter(prev => !prev); setAbsenceFilter(false); }}
+            className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${birthdayFilter ? 'bg-rose-50 border-rose-400 ring-2 ring-rose-400/40' : 'bg-white border-[#EAE3E4] hover:border-rose-300'}`}
+          >
+            <div className="text-[11px] text-[#702C3B] font-bold flex items-center justify-between">
+              <span>أعياد ميلاد هذا الشهر</span>
+              <Cake className="w-4 h-4 text-[#702C3B]" />
+            </div>
+            <div className="text-xl font-bold text-[#702C3B] mt-1">{birthdaysThisMonthCount}</div>
+            <div className="text-[10px] text-[#81777A] mt-0.5">
+              {birthdayFilter ? '✓ مفعل (مواليد هذا الشهر)' : 'اضغط لتهنئتهم واتساب 🎂'}
+            </div>
           </div>
         </div>
 
@@ -451,6 +544,27 @@ export default function MembersPage() {
                         لم يعترف (4 أسابيع)
                       </span>
                     )}
+                    {(() => {
+                      const bday = getBirthdayInfo(m.birth_date);
+                      if (!bday) return null;
+                      if (bday.isToday) {
+                        return (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200 text-amber-900 border border-amber-300 flex items-center gap-1">
+                            <Cake className="w-3 h-3 text-amber-800" />
+                            عيد ميلاده اليوم ({bday.turningAge} سنة)! 🎉
+                          </span>
+                        );
+                      }
+                      if (bday.daysRemaining <= 14) {
+                        return (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200 flex items-center gap-1">
+                            <Cake className="w-3 h-3 text-rose-600" />
+                            عيد ميلاده بعد {bday.daysRemaining} يوم ({bday.formattedDate})
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                 </div>
 
@@ -463,12 +577,21 @@ export default function MembersPage() {
                     <span>أب الاعتراف:</span>
                     <strong className="text-[#702C3B] font-semibold">{m.confession_father || 'غير مسجل'}</strong>
                   </div>
+                  {m.phone && (
+                    <div className="flex items-center justify-between">
+                      <span>هاتف المخدوم:</span>
+                      <a href={`tel:${m.phone}`} className="text-[#702C3B] font-bold hover:underline flex items-center gap-1">
+                        <Phone className="w-3 h-3" />
+                        <span>{m.phone}</span>
+                      </a>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <span>ولي الأمر ({m.guardian_relationship}):</span>
                     <strong className="text-[#282326]">{m.guardian_name}</strong>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span>رقم الهاتف:</span>
+                    <span>هاتف ولي الأمر:</span>
                     <a href={`tel:${m.guardian_phone}`} className="text-[#702C3B] font-bold hover:underline flex items-center gap-1">
                       <Phone className="w-3 h-3" />
                       <span>{m.guardian_phone}</span>
@@ -478,13 +601,44 @@ export default function MembersPage() {
               </div>
 
               <div className="pt-3 border-t border-[#EAE3E4] flex items-center justify-between gap-2 flex-wrap">
-                <a
-                  href={`tel:${m.guardian_phone}`}
-                  className="px-3.5 py-2 rounded-xl bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 transition-colors flex items-center gap-1.5 shadow-xs active:scale-95"
-                >
-                  <Phone className="w-3.5 h-3.5" />
-                  <span>اتصال بولي الأمر</span>
-                </a>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {/* WhatsApp Pastoral / Birthday Action */}
+                  {(() => {
+                    const targetPhone = (m.guardian_phone && m.guardian_phone !== '—' && m.guardian_phone.length >= 8)
+                      ? m.guardian_phone
+                      : m.phone;
+                    const bday = getBirthdayInfo(m.birth_date);
+                    const isBdayNow = bday && (bday.isToday || bday.daysRemaining <= 3);
+                    const msg = isBdayNow
+                      ? getBirthdayGreetingMessage(m.full_name)
+                      : getPastoralVisitationMessage(m.full_name, m.current_family_name, m.consecutive_absences || 0);
+                    const waUrl = getWhatsAppUrl(targetPhone, msg);
+
+                    if (!waUrl) return null;
+                    return (
+                      <a
+                        href={waUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`px-3 py-1.5 rounded-xl text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs active:scale-95 ${
+                          isBdayNow ? 'bg-amber-600 hover:bg-amber-700 animate-pulse' : 'bg-emerald-600 hover:bg-emerald-700'
+                        }`}
+                        title={isBdayNow ? 'إرسال تهنئة عيد الميلاد عبر واتساب' : 'إرسال رسالة افتقاد بالواتساب'}
+                      >
+                        {isBdayNow ? <Cake className="w-3.5 h-3.5" /> : <MessageCircle className="w-3.5 h-3.5" />}
+                        <span>{isBdayNow ? 'تهنئة واتساب 🎂' : 'افتقاد واتساب'}</span>
+                      </a>
+                    );
+                  })()}
+
+                  <a
+                    href={`tel:${m.guardian_phone && m.guardian_phone !== '—' ? m.guardian_phone : m.phone}`}
+                    className="p-2 rounded-xl border border-[#EAE3E4] text-[#81777A] hover:bg-[#FAF5F6] hover:text-[#702C3B] transition-colors"
+                    title="اتصال هاتفي"
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                  </a>
+                </div>
 
                 <div className="flex items-center gap-1.5">
                   {canManageAllFamilies && (
