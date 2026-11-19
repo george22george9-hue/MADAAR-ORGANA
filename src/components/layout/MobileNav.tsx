@@ -25,7 +25,8 @@ import {
   LogOut,
   GraduationCap,
   Smartphone,
-  Download
+  Download,
+  MessageCircle
 } from 'lucide-react';
 
 interface MobileNavProps {
@@ -228,8 +229,21 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
           })}
         </div>
 
-        {/* PWA Install Shortcut & Logout */}
+        {/* Developer Contact, PWA Install & Logout */}
         <div className="p-3 border-t border-[#EAE3E4] space-y-2">
+          <a
+            href={`https://wa.me/201202074649?text=${encodeURIComponent(
+              `بتواصل معاك بخصوص منظومة اورجانا انا (${currentUser?.full_name || 'مستخدم المنظومة'})`
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onClose}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors"
+          >
+            <MessageCircle className="w-4 h-4 text-emerald-600" />
+            <span>تواصل مع المطور</span>
+          </a>
+
           <button
             onClick={() => {
               onClose();
@@ -237,7 +251,7 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
                 window.dispatchEvent(new CustomEvent('organa-trigger-pwa-install'));
               }
             }}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold text-[#702C3B] bg-[#FAF5F6] border border-[#702C3B]/20 hover:bg-[#F3E8EB] transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-[#702C3B] bg-[#FAF5F6] border border-[#702C3B]/20 hover:bg-[#F3E8EB] transition-colors"
           >
             <Smartphone className="w-4 h-4 text-[#702C3B]" />
             <span>تثبيت التطبيق على الشاشة الرئيسية</span>
@@ -245,7 +259,7 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
 
           <button
             onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
           >
             <LogOut className="w-4 h-4" />
             <span>تسجيل الخروج</span>

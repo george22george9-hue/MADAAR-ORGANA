@@ -21,7 +21,8 @@ import {
   Settings,
   HeartHandshake,
   BarChart3,
-  GraduationCap
+  GraduationCap,
+  MessageCircle
 } from 'lucide-react';
 
 interface NavItem {
@@ -33,7 +34,7 @@ interface NavItem {
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { currentRole } = useAuth();
+  const { currentRole, currentUser } = useAuth();
 
   const getNavItems = (): NavItem[] => {
     // ===== Admin (George - Full Technical & System Access) =====
@@ -154,9 +155,20 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="p-3 border-t border-[#EAE3E4] text-center">
-        <div className="text-[10px] text-[#81777A]">MADAAR Technologies</div>
+      {/* Contact Developer & Brand Footer */}
+      <div className="p-3 border-t border-[#EAE3E4] space-y-2 text-center">
+        <a
+          href={`https://wa.me/201202074649?text=${encodeURIComponent(
+            `بتواصل معاك بخصوص منظومة اورجانا انا (${currentUser?.full_name || 'مستخدم المنظومة'})`
+          )}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all shadow-2xs active:scale-95"
+        >
+          <MessageCircle className="w-4 h-4 text-emerald-600" />
+          <span>تواصل مع المطور</span>
+        </a>
+        <div className="text-[10px] text-[#81777A] font-semibold tracking-wider">ORGANA • MADAAR Technologies</div>
       </div>
     </aside>
   );

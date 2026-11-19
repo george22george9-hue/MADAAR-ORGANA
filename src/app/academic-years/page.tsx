@@ -77,7 +77,7 @@ export default function AcademicYearsPage() {
             <div>
               <div className="flex items-center gap-2 text-xs font-bold text-[#702C3B] tracking-wide mb-1.5">
                 <Sparkles className="w-4 h-4 text-[#702C3B]" />
-                <span>مطرانية شبرا الخيمة وتوابعها – كنيسة الشهيد العظيم مارجرجس بسندبيس</span>
+                <span>كنيسة الشهيد العظيم مارجرجس بسندبيس</span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-black text-[#421923] tracking-tight">
                 إدارة السنوات الدراسية والترحيل السنوي

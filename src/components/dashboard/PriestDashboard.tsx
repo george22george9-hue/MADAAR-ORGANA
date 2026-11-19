@@ -98,9 +98,6 @@ ${(data.familyStats || []).map((f: any) => `• ${f.name}: ${f.members_count || 
         </h1>
 
         <div className="mt-3 pt-2.5 border-t border-white/15 flex flex-col gap-0.5">
-          <span className="text-xs text-white/90 font-bold tracking-wide">
-            مطرانية شبرا الخيمة وتوابعها
-          </span>
           <span className="text-sm text-amber-300 font-extrabold tracking-wide">
             كنيسة الشهيد العظيم مارجرجس بسندبيس
           </span>
@@ -434,8 +431,8 @@ ${(data.familyStats || []).map((f: any) => `• ${f.name}: ${f.members_count || 
           <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
           <span>تواصل مع المطور عبر واتساب 💬</span>
         </a>
-        <div className="text-[10px] text-[#81777A]">
-          منظومة أورجانا • MADAAR Technologies • مطرانية شبرا الخيمة وتوابعها
+        <div className="text-[10px] text-[#81777A] font-semibold tracking-wide">
+          ORGANA • MADAAR Technologies
         </div>
       </div>
     </div>
