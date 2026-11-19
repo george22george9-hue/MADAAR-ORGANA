@@ -2329,6 +2329,12 @@ export async function executeAnnualPromotionPg(
     // Track sequential numbers for target codes
     const nextSeqPerPrefix: Record<string, number> = {};
 
+    // Pre-pass: Temporarily neutralize member codes to prevent unique constraint collision
+    // when a promoted member's new code equals another member's old code before they are promoted.
+    await client.query(`
+      UPDATE served_members SET code = '__TMP_PROMO_' || id WHERE is_active = true
+    `);
+
     for (const m of members) {
       const decision = customizedDecisions[m.id];
       const matchedRule = rules.find((r: any) => 
@@ -2397,6 +2403,10 @@ export async function executeAnnualPromotionPg(
         }
         const seqStr = String(nextSeqPerPrefix[prefix]).padStart(2, '0');
         targetCode = `${prefix}${seqStr}`;
+      } else if (finalStatus === 'graduated') {
+        targetCode = `${m.code}-GRAD`;
+      } else if (finalStatus === 'stopped') {
+        targetCode = `${m.code}-STOP`;
       }
 
       // 1. Lock baseline archive in member_academic_history for fromYearId
@@ -2538,6 +2548,15 @@ export async function rollbackAnnualPromotionPg(
       throw new Error('بيانات النسخة الاحتياطية للعملية غير متوفرة للتراجع الآمن');
     }
 
+    // Pre-pass for rollback: neutralize codes to prevent collision during restoration
+    const restoredMemberIds = snapshot.members_snapshot.map((m: any) => m.id);
+    if (restoredMemberIds.length > 0) {
+      await client.query(`
+        UPDATE served_members SET code = '__TMP_ROLLBACK_' || id
+        WHERE id = ANY($1::text[])
+      `, [restoredMemberIds]);
+    }
+
     // Restore each member to previous snapshot state
     for (const prev of snapshot.members_snapshot) {
       await client.query(`
@@ -2552,10 +2571,14 @@ export async function rollbackAnnualPromotionPg(
       `, [prev.current_family_id, prev.stage, prev.code, prev.assigned_servant_id, prev.is_active, prev.id]);
     }
 
-    // Remove the target year baseline records
-    await client.query(`
-      DELETE FROM member_academic_history WHERE academic_year_id = $1
-    `, [op.to_academic_year_id]);
+    // Remove the target year baseline records ONLY for the restored snapshot members
+    // Ensuring any new members registered post-promotion in the target year remain completely untouched
+    if (restoredMemberIds.length > 0) {
+      await client.query(`
+        DELETE FROM member_academic_history 
+        WHERE academic_year_id = $1 AND member_id = ANY($2::text[])
+      `, [op.to_academic_year_id, restoredMemberIds]);
+    }
 
     // Restore active status for previous year in member_academic_history
     await client.query(`
