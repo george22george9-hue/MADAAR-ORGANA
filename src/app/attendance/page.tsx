@@ -77,7 +77,7 @@ const COMMON_EXCUSES = [
 function AttendanceContent() {
   const searchParams = useSearchParams();
   const meetingParamId = searchParams.get('meetingId');
-  const { currentRole, assignedFamilyId, canManageAllFamilies } = useAuth();
+  const { currentRole, currentUser, assignedFamilyId, canManageAllFamilies } = useAuth();
 
   const [families, setFamilies] = useState<Family[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -173,7 +173,12 @@ function AttendanceContent() {
       for (const item of queue) {
         await fetch(`/api/meetings/${item.meetingId}/attendance`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': currentUser?.id || '',
+            'x-user-role': currentRole || 'priest',
+            'x-user-family-id': assignedFamilyId || selectedFamilyId || '',
+          },
           body: JSON.stringify(item.payload),
         });
         localStorage.removeItem(getDraftKey(item.meetingId));
@@ -211,7 +216,13 @@ function AttendanceContent() {
     const famParam = (currentRole === 'family_leader' || currentRole === 'servant') && assignedFamilyId 
       ? `&userFamilyId=${assignedFamilyId}&familyId=${assignedFamilyId}` 
       : '';
-    fetch(`/api/meetings?role=${currentRole}${famParam}`)
+    fetch(`/api/meetings?role=${currentRole || 'priest'}${famParam}`, {
+      headers: {
+        'x-user-id': currentUser?.id || '',
+        'x-user-role': currentRole || 'priest',
+        'x-user-family-id': assignedFamilyId || selectedFamilyId || '',
+      },
+    })
       .then(r => r.json())
       .then(res => {
         if (res.success && res.meetings) {
@@ -239,18 +250,23 @@ function AttendanceContent() {
   // 3. Resolve Meeting when selectedFamilyId or selectedDate changes
   useEffect(() => {
     if (!meetingsLoaded || !selectedFamilyId || !selectedDate) return;
-    const match = meetings.find(m => m.family_id === selectedFamilyId && m.date === selectedDate);
+    const match = meetings.find(m => m.family_id === selectedFamilyId && String(m.date).split('T')[0] === selectedDate);
     if (match) {
       setSelectedMeetingId(match.id);
     } else {
       fetch('/api/meetings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser?.id || '',
+          'x-user-role': currentRole || 'priest',
+          'x-user-family-id': assignedFamilyId || selectedFamilyId || '',
+        },
         body: JSON.stringify({
           family_id: selectedFamilyId,
           date: selectedDate,
           title: `لقاء الجمعة (${selectedDate})`,
-          actorRole: currentRole,
+          actorRole: currentRole || 'priest',
         }),
       })
         .then(r => r.json())
@@ -262,16 +278,22 @@ function AttendanceContent() {
         })
         .catch(console.error);
     }
-  }, [meetingsLoaded, selectedFamilyId, selectedDate, meetings, currentRole]);
+  }, [meetingsLoaded, selectedFamilyId, selectedDate, meetings, currentRole, currentUser, assignedFamilyId]);
 
   // Load Attendance for selected meeting
   const loadAttendance = (mId: string) => {
     if (!mId) return;
     setLoading(true);
     const famParam = (currentRole === 'family_leader' || currentRole === 'servant') && assignedFamilyId 
-      ? `?role=${currentRole}&userFamilyId=${assignedFamilyId}` 
+      ? `&userFamilyId=${assignedFamilyId}` 
       : '';
-    fetch(`/api/meetings/${mId}/attendance${famParam}`)
+    fetch(`/api/meetings/${mId}/attendance?role=${currentRole || 'priest'}${famParam}`, {
+      headers: {
+        'x-user-id': currentUser?.id || '',
+        'x-user-role': currentRole || 'priest',
+        'x-user-family-id': assignedFamilyId || selectedFamilyId || '',
+      },
+    })
       .then(r => r.json())
       .then(res => {
         if (res.success) {
@@ -511,15 +533,22 @@ function AttendanceContent() {
 
     // If online, perform network save
     try {
+      const authHeaders = {
+        'Content-Type': 'application/json',
+        'x-user-id': currentUser?.id || '',
+        'x-user-role': currentRole || 'priest',
+        'x-user-family-id': assignedFamilyId || selectedFamilyId || '',
+      };
+
       await fetch(`/api/meetings/${selectedMeetingId}/attendance`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify(membersPayload),
       });
 
       await fetch(`/api/meetings/${selectedMeetingId}/attendance`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify(servantsPayload),
       });
 

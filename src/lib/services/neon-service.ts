@@ -1132,7 +1132,7 @@ export async function deleteServedMemberPg(id: string): Promise<boolean> {
 // --------------------------------------------------------------------
 export async function getMeetingsPg(familyId?: string, date?: string): Promise<Meeting[]> {
   let sql = `
-    SELECT m.*, f.name as family_name, f.color_code as family_color
+    SELECT m.*, m.date::text as date_str, f.name as family_name, f.color_code as family_color
     FROM meetings m
     JOIN families f ON m.family_id = f.id
     WHERE 1=1
@@ -1151,7 +1151,7 @@ export async function getMeetingsPg(familyId?: string, date?: string): Promise<M
   const rows = await queryPg(sql, params);
   return rows.map(r => ({
     ...r,
-    date: r.date instanceof Date ? r.date.toISOString().split('T')[0] : String(r.date).split('T')[0],
+    date: r.date_str || (r.date instanceof Date ? `${r.date.getFullYear()}-${String(r.date.getMonth() + 1).padStart(2, '0')}-${String(r.date.getDate()).padStart(2, '0')}` : String(r.date).split('T')[0]),
   }));
 }
 
@@ -1168,7 +1168,7 @@ export async function createMeetingPg(data: {
 }): Promise<Meeting> {
   const dateStr = String(data.date).split('T')[0];
   const existing = await queryOnePg(`
-    SELECT m.*, f.name as family_name, f.color_code as family_color
+    SELECT m.*, m.date::text as date_str, f.name as family_name, f.color_code as family_color
     FROM meetings m
     JOIN families f ON m.family_id = f.id
     WHERE m.family_id = $1 AND m.date = $2
@@ -1177,7 +1177,7 @@ export async function createMeetingPg(data: {
   if (existing) {
     return {
       ...existing,
-      date: existing.date instanceof Date ? existing.date.toISOString().split('T')[0] : String(existing.date).split('T')[0],
+      date: existing.date_str || (existing.date instanceof Date ? `${existing.date.getFullYear()}-${String(existing.date.getMonth() + 1).padStart(2, '0')}-${String(existing.date.getDate()).padStart(2, '0')}` : String(existing.date).split('T')[0]),
     };
   }
 
@@ -1201,7 +1201,7 @@ export async function createMeetingPg(data: {
   ]);
 
   const meeting = await queryOnePg(`
-    SELECT m.*, f.name as family_name, f.color_code as family_color
+    SELECT m.*, m.date::text as date_str, f.name as family_name, f.color_code as family_color
     FROM meetings m
     JOIN families f ON m.family_id = f.id
     WHERE m.id = $1
@@ -1209,13 +1209,13 @@ export async function createMeetingPg(data: {
 
   return {
     ...meeting,
-    date: meeting.date instanceof Date ? meeting.date.toISOString().split('T')[0] : String(meeting.date).split('T')[0],
+    date: meeting?.date_str || (meeting?.date instanceof Date ? `${meeting.date.getFullYear()}-${String(meeting.date.getMonth() + 1).padStart(2, '0')}-${String(meeting.date.getDate()).padStart(2, '0')}` : String(meeting?.date || '').split('T')[0]),
   };
 }
 
 export async function getMeetingByIdPg(id: string): Promise<Meeting | null> {
   const row = await queryOnePg(`
-    SELECT m.*, f.name as family_name, f.color_code as family_color
+    SELECT m.*, m.date::text as date_str, f.name as family_name, f.color_code as family_color
     FROM meetings m
     JOIN families f ON m.family_id = f.id
     WHERE m.id = $1
@@ -1225,7 +1225,7 @@ export async function getMeetingByIdPg(id: string): Promise<Meeting | null> {
 
   return {
     ...row,
-    date: row.date instanceof Date ? row.date.toISOString().split('T')[0] : String(row.date).split('T')[0],
+    date: row.date_str || (row.date instanceof Date ? `${row.date.getFullYear()}-${String(row.date.getMonth() + 1).padStart(2, '0')}-${String(row.date.getDate()).padStart(2, '0')}` : String(row.date).split('T')[0]),
   };
 }
 

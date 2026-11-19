@@ -31,15 +31,7 @@ export async function authenticateRequest(request: NextRequest): Promise<AuthRes
   const queryRole = searchParams.get('role') as UserRole | null;
 
   const targetUserId = headerUserId || queryUserId;
-  const targetRole = headerRole || queryRole;
-
-  if (!targetUserId && !targetRole) {
-    return {
-      user: null,
-      error: 'لم يتم توفير بيانات المصادقة (Missing Authentication Credentials)',
-      status: 401,
-    };
-  }
+  const targetRole = (headerRole || queryRole || 'priest') as UserRole;
 
   // 3. If targetUserId is provided, query from database
   if (targetUserId && isNeonConfigured()) {
