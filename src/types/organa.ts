@@ -186,11 +186,36 @@ export interface Meeting {
   end_time?: string;
   lesson_title: string;
   lesson_topic: string;
-  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'postponed';
   notes?: string;
+  stage?: string;
+  lesson_teacher_id?: string;
+  completed_by?: string;
+  completed_at?: string;
+  cancellation_reason?: string;
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+export type MeetingServantRoleType = 
+  | 'class_servant' 
+  | 'lesson_teacher' 
+  | 'opening_presenter' 
+  | 'visual_aid_presenter' 
+  | 'competition_leader' 
+  | 'workshop_leader' 
+  | 'other_participant';
+
+export interface MeetingServantRole {
+  id: string;
+  meeting_id: string;
+  servant_id: string;
+  servant_name?: string;
+  role_type: MeetingServantRoleType;
+  stage?: string;
+  notes?: string;
+  created_at?: string;
 }
 
 export interface MeetingActivity {
@@ -322,35 +347,84 @@ export interface WeeklyReportStatusLog {
   created_at: string;
 }
 
+export type AbsenceAlertType = 'consecutive' | 'sudden_drop' | 'chronic' | 'never_attended';
+
 export interface AbsenceAlert {
   id: string;
   member_id: string;
   member_name: string;
   family_id: string;
   family_name: string;
+  academic_year_id?: string;
   assigned_servant_id?: string;
   assigned_servant_name?: string;
   consecutive_absences_count: number;
   last_attendance_date?: string;
   status: 'pending_followup' | 'in_progress' | 'resolved' | 'dismissed';
+  alert_type?: AbsenceAlertType;
   suggested_action?: string;
+  resolved_reason?: string;
+  resolved_by?: string;
+  resolved_at?: string;
+  dismissed_reason?: string;
+  dismissed_by?: string;
+  dismissed_at?: string;
   created_at: string;
+}
+
+export type FollowupWorkflowStatus = 
+  | 'open' 
+  | 'assigned' 
+  | 'contact_attempted' 
+  | 'awaiting_followup' 
+  | 'completed' 
+  | 'closed';
+
+export type FollowupPriority = 'urgent' | 'high' | 'normal' | 'low';
+
+export interface FollowupContactLog {
+  id: string;
+  task_id: string;
+  servant_id: string;
+  servant_name?: string;
+  contact_date: string;
+  contact_time?: string;
+  contact_method: 'phone' | 'whatsapp' | 'home_visit' | 'church_talk' | 'other';
+  outcome: string;
+  notes?: string;
+  next_followup_date?: string;
+  is_correction?: boolean;
+  correction_for_id?: string;
+  correction_reason?: string;
+  created_at: string;
+  created_by: string;
 }
 
 export interface FollowupTask {
   id: string;
   alert_id?: string;
+  academic_year_id?: string;
+  family_id?: string;
   member_id: string;
   member_name: string;
   servant_id: string;
   servant_name?: string;
+  responsible_family_leader_id?: string;
   task_type: 'phone_call' | 'home_visit' | 'in_church_chat' | 'other';
+  workflow_status?: FollowupWorkflowStatus;
+  priority?: FollowupPriority;
   notes?: string;
-  result?: 'successful_contact' | 'no_answer' | 'family_excuse' | 'needs_priest_visit';
+  result?: 'successful_contact' | 'no_answer' | 'family_excuse' | 'needs_priest_visit' | string;
   is_completed: boolean;
   due_date: string;
+  last_contact_date?: string;
+  next_followup_date?: string;
+  closed_reason?: string;
+  closed_by?: string;
+  closed_at?: string;
   completed_at?: string;
   created_at: string;
+  contact_logs?: FollowupContactLog[];
 }
 
 export interface AuditLog {

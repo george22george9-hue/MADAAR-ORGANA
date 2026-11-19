@@ -26,6 +26,11 @@ import {
   ServantAcademicAssignment,
   AnnualPromotionPreview,
   PromotionPreviewItem,
+  MeetingServantRole,
+  MeetingServantRoleType,
+  FollowupContactLog,
+  FollowupWorkflowStatus,
+  FollowupPriority,
 } from '@/types/organa';
 import { getStagesForFamily, getFamilyCodeLetter, getStageCodeLetter } from '@/lib/constants/stages';
 
@@ -2941,3 +2946,555 @@ export async function getServantHistoricalProfilePg(
     totalYearsServed: distinctYears,
   };
 }
+
+// ====================================================================
+// 21. PHASE 2 — Smart Attendance & Pastoral Follow-up Backend Services
+// ====================================================================
+
+// --------------------------------------------------------------------
+// A. Meeting Lifecycle Management (تأكيد الانعقاد والإلغاء)
+// --------------------------------------------------------------------
+export async function confirmMeetingCompletionPg(
+  meetingId: string,
+  servantId: string
+): Promise<boolean> {
+  const pool = getPgPool()!;
+  const meeting = await queryOnePg(`SELECT id, status, title FROM meetings WHERE id = $1`, [meetingId]);
+  if (!meeting) {
+    throw new Error(`الاجتماع غير موجود: ${meetingId}`);
+  }
+
+  await queryPg(`
+    UPDATE meetings SET
+      status = 'completed',
+      completed_by = $2,
+      completed_at = now(),
+      updated_at = now()
+    WHERE id = $1
+  `, [meetingId, servantId]);
+
+  return true;
+}
+
+export async function cancelMeetingPg(
+  meetingId: string,
+  cancellationReason: string,
+  actorId: string
+): Promise<boolean> {
+  const pool = getPgPool()!;
+  const meeting = await queryOnePg(`SELECT id, status, title FROM meetings WHERE id = $1`, [meetingId]);
+  if (!meeting) {
+    throw new Error(`الاجتماع غير موجود: ${meetingId}`);
+  }
+
+  await queryPg(`
+    UPDATE meetings SET
+      status = 'cancelled',
+      cancellation_reason = $2,
+      updated_at = now()
+    WHERE id = $1
+  `, [meetingId, cancellationReason]);
+
+  return true;
+}
+
+// --------------------------------------------------------------------
+// B. Meeting Servant Roles (تعدد الخدام والمشاركين في الاجتماع الواحد)
+// --------------------------------------------------------------------
+export async function recordMeetingServantRolesPg(
+  meetingId: string,
+  roles: Array<{
+    servant_id: string;
+    role_type: MeetingServantRoleType;
+    stage?: string;
+    notes?: string;
+  }>
+): Promise<boolean> {
+  const pool = getPgPool()!;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`DELETE FROM meeting_servant_roles WHERE meeting_id = $1`, [meetingId]);
+
+    let lessonTeacherId: string | null = null;
+    let idx = 0;
+    for (const r of roles) {
+      idx++;
+      const id = `msr-${meetingId}-${r.servant_id}-${r.role_type}-${idx}`;
+      await client.query(`
+        INSERT INTO meeting_servant_roles (id, meeting_id, servant_id, role_type, stage, notes, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, now())
+      `, [id, meetingId, r.servant_id, r.role_type, r.stage || null, r.notes || null]);
+
+      if (r.role_type === 'lesson_teacher' && !lessonTeacherId) {
+        lessonTeacherId = r.servant_id;
+      }
+    }
+
+    if (lessonTeacherId) {
+      await client.query(`
+        UPDATE meetings SET lesson_teacher_id = $2, updated_at = now() WHERE id = $1
+      `, [meetingId, lessonTeacherId]);
+    }
+
+    await client.query('COMMIT');
+    return true;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getMeetingServantRolesPg(meetingId: string): Promise<MeetingServantRole[]> {
+  const sql = `
+    SELECT msr.*, s.full_name as servant_name
+    FROM meeting_servant_roles msr
+    JOIN servants s ON msr.servant_id = s.id
+    WHERE msr.meeting_id = $1
+    ORDER BY msr.created_at ASC
+  `;
+  return queryPg(sql, [meetingId]);
+}
+
+// --------------------------------------------------------------------
+// C. Independent Follow-up Contact Logs (Append-Only)
+// --------------------------------------------------------------------
+export async function addFollowupContactLogPg(
+  taskId: string,
+  entry: {
+    servant_id: string;
+    contact_date: string;
+    contact_method: 'phone' | 'whatsapp' | 'home_visit' | 'church_talk' | 'other';
+    outcome: string;
+    notes?: string;
+    next_followup_date?: string;
+    is_correction?: boolean;
+    correction_for_id?: string;
+    correction_reason?: string;
+    created_by: string;
+  }
+): Promise<FollowupContactLog> {
+  const pool = getPgPool()!;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Lock task for update to safely handle concurrent attempts
+    const taskRes = await client.query(`
+      SELECT id, workflow_status, last_contact_date, next_followup_date
+      FROM followup_tasks
+      WHERE id = $1
+      FOR UPDATE
+    `, [taskId]);
+
+    if (taskRes.rows.length === 0) {
+      throw new Error(`حالة الافتقاد غير موجودة: ${taskId}`);
+    }
+
+    const currentTask = taskRes.rows[0];
+    const logId = `fcl-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+
+    // 2. Insert append-only contact log
+    await client.query(`
+      INSERT INTO followup_contact_logs (
+        id, task_id, servant_id, contact_date, contact_time, contact_method,
+        outcome, notes, next_followup_date, is_correction, correction_for_id,
+        correction_reason, created_at, created_by
+      ) VALUES ($1, $2, $3, $4, now(), $5, $6, $7, $8, $9, $10, $11, now(), $12)
+    `, [
+      logId,
+      taskId,
+      entry.servant_id,
+      entry.contact_date,
+      entry.contact_method,
+      entry.outcome,
+      entry.notes || null,
+      entry.next_followup_date || null,
+      Boolean(entry.is_correction),
+      entry.correction_for_id || null,
+      entry.correction_reason || null,
+      entry.created_by,
+    ]);
+
+    // 3. Transition task workflow to 'contact_attempted' if currently open or assigned
+    const nextStatus = (currentTask.workflow_status === 'open' || currentTask.workflow_status === 'assigned')
+      ? 'contact_attempted'
+      : currentTask.workflow_status;
+
+    await client.query(`
+      UPDATE followup_tasks SET
+        workflow_status = $2,
+        last_contact_date = $3,
+        next_followup_date = COALESCE($4, next_followup_date),
+        updated_at = now()
+      WHERE id = $1
+    `, [
+      taskId,
+      nextStatus,
+      entry.contact_date,
+      entry.next_followup_date || null,
+    ]);
+
+    await client.query('COMMIT');
+
+    return {
+      id: logId,
+      task_id: taskId,
+      servant_id: entry.servant_id,
+      contact_date: entry.contact_date,
+      contact_method: entry.contact_method,
+      outcome: entry.outcome,
+      notes: entry.notes,
+      next_followup_date: entry.next_followup_date,
+      is_correction: Boolean(entry.is_correction),
+      correction_for_id: entry.correction_for_id,
+      correction_reason: entry.correction_reason,
+      created_at: new Date().toISOString(),
+      created_by: entry.created_by,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getFollowupContactLogsPg(taskId: string): Promise<FollowupContactLog[]> {
+  const sql = `
+    SELECT fcl.*, s.full_name as servant_name
+    FROM followup_contact_logs fcl
+    JOIN servants s ON fcl.servant_id = s.id
+    WHERE fcl.task_id = $1
+    ORDER BY fcl.contact_time ASC
+  `;
+  const rows = await queryPg(sql, [taskId]);
+  return rows.map((r: any) => ({
+    ...r,
+    contact_date: r.contact_date instanceof Date ? r.contact_date.toISOString().split('T')[0] : String(r.contact_date).split('T')[0],
+    next_followup_date: r.next_followup_date instanceof Date ? r.next_followup_date.toISOString().split('T')[0] : (r.next_followup_date ? String(r.next_followup_date).split('T')[0] : undefined),
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
+}
+
+// --------------------------------------------------------------------
+// D. Follow-up State Machine Transition (قواعد الانتقال الصارمة)
+// --------------------------------------------------------------------
+export async function transitionFollowupTaskStatusPg(
+  taskId: string,
+  newStatus: FollowupWorkflowStatus,
+  actorId: string,
+  options?: {
+    assigned_to?: string;
+    outcome?: string;
+    next_followup_date?: string;
+    closed_reason?: string;
+    notes?: string;
+  }
+): Promise<boolean> {
+  const pool = getPgPool()!;
+  const task = await queryOnePg(`SELECT * FROM followup_tasks WHERE id = $1`, [taskId]);
+  if (!task) {
+    throw new Error(`حالة الافتقاد غير موجودة: ${taskId}`);
+  }
+
+  // 1. Validation rules per target state
+  if (newStatus === 'assigned') {
+    const servantId = options?.assigned_to || task.servant_id;
+    if (!servantId) {
+      throw new Error('لا يمكن إسناد حالة الافتقاد دون تحديد الخادم المسؤول.');
+    }
+  } else if (newStatus === 'contact_attempted') {
+    const logsCountRes = await queryOnePg(
+      `SELECT COUNT(*) as cnt FROM followup_contact_logs WHERE task_id = $1`,
+      [taskId]
+    );
+    if (!logsCountRes || parseInt(logsCountRes.cnt, 10) === 0) {
+      throw new Error('لا يمكن نقل الحالة إلى "تم التواصل" دون وجود سجل محاولة تواصل مسجل.');
+    }
+  } else if (newStatus === 'awaiting_followup') {
+    const nextDate = options?.next_followup_date || task.next_followup_date;
+    if (!nextDate) {
+      throw new Error('لا يمكن نقل الحالة إلى "بانتظار المتابعة" دون تحديد تاريخ المتابعة القادم.');
+    }
+  } else if (newStatus === 'completed') {
+    const outcome = options?.outcome || task.result;
+    if (!outcome) {
+      throw new Error('لا يمكن إكمال حالة الافتقاد دون توثيق النتيجة (outcome).');
+    }
+  } else if (newStatus === 'closed') {
+    if (!options?.closed_reason) {
+      throw new Error('لا يمكن إغلاق حالة الافتقاد دون تدوين سبب الإغلاق.');
+    }
+  }
+
+  // 2. Perform safe update
+  const isCompleted = (newStatus === 'completed' || newStatus === 'closed');
+  await queryPg(`
+    UPDATE followup_tasks SET
+      workflow_status = $2,
+      is_completed = $3,
+      servant_id = COALESCE($4, servant_id),
+      result = COALESCE($5, result),
+      next_followup_date = COALESCE($6, next_followup_date),
+      notes = COALESCE($7, notes),
+      closed_reason = CASE WHEN $2 = 'closed' THEN $8 ELSE closed_reason END,
+      closed_by = CASE WHEN $2 = 'closed' THEN $9 ELSE closed_by END,
+      closed_at = CASE WHEN $2 = 'closed' THEN now() ELSE closed_at END,
+      completed_at = CASE WHEN $2 = 'completed' THEN now() ELSE completed_at END,
+      updated_at = now()
+    WHERE id = $1
+  `, [
+    taskId,
+    newStatus,
+    isCompleted,
+    options?.assigned_to || null,
+    options?.outcome || null,
+    options?.next_followup_date || null,
+    options?.notes || null,
+    options?.closed_reason || null,
+    actorId,
+  ]);
+
+  return true;
+}
+
+// --------------------------------------------------------------------
+// E. Intelligent Absence Engine (محرك احتساب الغياب على الاجتماعات المكتملة)
+// --------------------------------------------------------------------
+export async function runAbsenceAnalysisEnginePg(
+  academicYearId: string,
+  options?: { familyId?: string; stage?: string }
+): Promise<{
+  analyzedMembersCount: number;
+  newAlertsCreated: number;
+  existingAlertsUpdated: number;
+}> {
+  // 1. Fetch only meetings that actually took place and are marked 'completed'
+  let meetingsSql = `
+    SELECT id, family_id, date, title, academic_year_id
+    FROM meetings
+    WHERE status = 'completed' AND academic_year_id = $1 AND date <= CURRENT_DATE
+  `;
+  const mParams: any[] = [academicYearId];
+  if (options?.familyId) {
+    mParams.push(options.familyId);
+    meetingsSql += ` AND family_id = $${mParams.length}`;
+  }
+  meetingsSql += ` ORDER BY date ASC`;
+
+  const meetings = await queryPg(meetingsSql, mParams);
+  if (meetings.length === 0) {
+    return { analyzedMembersCount: 0, newAlertsCreated: 0, existingAlertsUpdated: 0 };
+  }
+
+  // 2. Fetch active served members
+  let membersSql = `
+    SELECT id, full_name, code, current_family_id, stage, assigned_servant_id
+    FROM served_members
+    WHERE is_active = true AND stage NOT IN ('خريج', 'متوقف')
+  `;
+  const memParams: any[] = [];
+  if (options?.familyId) {
+    memParams.push(options.familyId);
+    membersSql += ` AND current_family_id = $${memParams.length}`;
+  }
+  if (options?.stage) {
+    memParams.push(options.stage);
+    membersSql += ` AND stage = $${memParams.length}`;
+  }
+  const members = await queryPg(membersSql, memParams);
+
+  let newAlerts = 0;
+  let updatedAlerts = 0;
+
+  for (const member of members) {
+    // Get meetings for member's family
+    const memberMeetings = meetings.filter((m: any) => m.family_id === member.current_family_id);
+    if (memberMeetings.length === 0) continue;
+
+    const meetingIds = memberMeetings.map((m: any) => m.id);
+
+    // Fetch attendance for these completed meetings
+    const attSql = `
+      SELECT meeting_id, status
+      FROM meeting_attendance
+      WHERE member_id = $1 AND meeting_id = ANY($2::text[])
+    `;
+    const attRows = await queryPg(attSql, [member.id, meetingIds]);
+    const attMap = new Map<string, string>();
+    attRows.forEach((r: any) => attMap.set(r.meeting_id, r.status));
+
+    // Calculate consecutive absences from newest meeting backwards
+    let consecutiveAbsences = 0;
+    let lastAttendanceDate: string | null = null;
+    let attendedCount = 0;
+
+    for (let i = memberMeetings.length - 1; i >= 0; i--) {
+      const m = memberMeetings[i];
+      const status = attMap.get(m.id);
+      if (status === 'present' || status === 'late') {
+        if (!lastAttendanceDate) {
+          lastAttendanceDate = m.date instanceof Date ? m.date.toISOString().split('T')[0] : String(m.date).split('T')[0];
+        }
+        attendedCount++;
+        break; // Stop counting consecutive absences at first attended session
+      } else {
+        consecutiveAbsences++;
+      }
+    }
+
+    // Determine alert type
+    let alertType: 'consecutive' | 'sudden_drop' | 'chronic' | 'never_attended' | null = null;
+    let suggestedAction = '';
+
+    if (consecutiveAbsences >= 3) {
+      alertType = 'consecutive';
+      suggestedAction = 'غياب متتالٍ لمدة 3 أسابيع أو أكثر – يتطلب افتقاداً فورياً';
+    } else if (consecutiveAbsences === 2) {
+      alertType = 'consecutive';
+      suggestedAction = 'غياب أسبوعين متتاليين – تنبيه مبكر للمتابعة';
+    } else if (memberMeetings.length >= 5 && (attendedCount / memberMeetings.length) < 0.40) {
+      alertType = 'chronic';
+      suggestedAction = 'غياب مزمن – نسبة الحضور أقل من 40% طوال السنة';
+    } else if (memberMeetings.length >= 3 && attendedCount === 0) {
+      alertType = 'never_attended';
+      suggestedAction = 'لم يحضر أي اجتماع منذ بداية السنة الكنسية';
+    }
+
+    if (alertType) {
+      // Check existing active alert to prevent duplicates
+      const existing = await queryOnePg(`
+        SELECT id, consecutive_absences_count FROM absence_alerts
+        WHERE member_id = $1 AND academic_year_id = $2 AND alert_type = $3
+          AND status NOT IN ('resolved', 'dismissed')
+      `, [member.id, academicYearId, alertType]);
+
+      if (existing) {
+        await queryPg(`
+          UPDATE absence_alerts SET
+            consecutive_absences_count = $2,
+            last_attendance_date = $3,
+            suggested_action = $4
+          WHERE id = $1
+        `, [existing.id, consecutiveAbsences, lastAttendanceDate, suggestedAction]);
+        updatedAlerts++;
+      } else {
+        const alertId = `alt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+        await queryPg(`
+          INSERT INTO absence_alerts (
+            id, member_id, family_id, academic_year_id, assigned_servant_id,
+            consecutive_absences_count, last_attendance_date, status, alert_type,
+            suggested_action, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending_followup', $8, $9, now())
+        `, [
+          alertId,
+          member.id,
+          member.current_family_id,
+          academicYearId,
+          member.assigned_servant_id || null,
+          consecutiveAbsences,
+          lastAttendanceDate,
+          alertType,
+          suggestedAction,
+        ]);
+        newAlerts++;
+
+        // Auto-create or link followup task if none exists
+        const existingTask = await queryOnePg(`
+          SELECT id FROM followup_tasks
+          WHERE member_id = $1 AND is_completed = false
+        `, [member.id]);
+
+        if (!existingTask) {
+          const taskId = `tsk-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+          await queryPg(`
+            INSERT INTO followup_tasks (
+              id, alert_id, academic_year_id, family_id, member_id, servant_id,
+              task_type, workflow_status, priority, is_completed, due_date, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, 'phone_call', 'open', $7, false, CURRENT_DATE + 7, now())
+          `, [
+            taskId,
+            alertId,
+            academicYearId,
+            member.current_family_id,
+            member.id,
+            member.assigned_servant_id || 'srv-admin',
+            consecutiveAbsences >= 3 ? 'urgent' : 'normal',
+          ]);
+        }
+      }
+    }
+  }
+
+  return {
+    analyzedMembersCount: members.length,
+    newAlertsCreated: newAlerts,
+    existingAlertsUpdated: updatedAlerts,
+  };
+}
+
+// --------------------------------------------------------------------
+// F. Historical Attendance Retrieval (بناءً على سياق وقت الاجتماع)
+// --------------------------------------------------------------------
+export async function getHistoricalAttendancePg(options: {
+  academicYearId: string;
+  familyId?: string;
+  stage?: string;
+  memberId?: string;
+  meetingId?: string;
+}): Promise<any[]> {
+  let sql = `
+    SELECT 
+      ma.id,
+      ma.meeting_id,
+      m.date as meeting_date,
+      m.title as meeting_title,
+      COALESCE(ma.academic_year_id, m.academic_year_id) as academic_year_id,
+      ay.name as academic_year_name,
+      ma.member_id,
+      sm.full_name as member_name,
+      sm.code as member_code,
+      COALESCE(ma.family_id_at_time, m.family_id) as family_id_at_time,
+      f.name as family_name_at_time,
+      COALESCE(ma.stage_at_time, sm.stage) as stage_at_time,
+      ma.status,
+      ma.attended_liturgy,
+      ma.attended_communion,
+      ma.attended_class,
+      ma.attended_confession,
+      ma.excuse_reason,
+      ma.recorded_by,
+      ma.recorded_at
+    FROM meeting_attendance ma
+    JOIN meetings m ON ma.meeting_id = m.id
+    LEFT JOIN academic_years ay ON COALESCE(ma.academic_year_id, m.academic_year_id) = ay.id
+    JOIN served_members sm ON ma.member_id = sm.id
+    LEFT JOIN families f ON COALESCE(ma.family_id_at_time, m.family_id) = f.id
+    WHERE (ma.academic_year_id = $1 OR m.academic_year_id = $1)
+  `;
+  const params: any[] = [options.academicYearId];
+
+  if (options.familyId) {
+    params.push(options.familyId);
+    sql += ` AND (ma.family_id_at_time = $${params.length} OR m.family_id = $${params.length})`;
+  }
+  if (options.stage) {
+    params.push(options.stage);
+    sql += ` AND (ma.stage_at_time = $${params.length} OR sm.stage = $${params.length})`;
+  }
+  if (options.memberId) {
+    params.push(options.memberId);
+    sql += ` AND ma.member_id = $${params.length}`;
+  }
+  if (options.meetingId) {
+    params.push(options.meetingId);
+    sql += ` AND ma.meeting_id = $${params.length}`;
+  }
+
+  sql += ` ORDER BY m.date DESC, sm.full_name ASC`;
+  return queryPg(sql, params);
+}
+
