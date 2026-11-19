@@ -8,7 +8,7 @@
 import React, { useEffect, useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/lib/context/auth-context';
-import { Servant, Family } from '@/types/organa';
+import { Servant, Family, ServantAcademicAssignment } from '@/types/organa';
 import {
   UserCheck,
   Phone,
@@ -24,7 +24,8 @@ import {
   Eye,
   CheckCircle2,
   X,
-  Trash2
+  Trash2,
+  GraduationCap
 } from 'lucide-react';
 import { exportToExcel } from '@/lib/export/excel';
 import { exportToPrintablePDF } from '@/lib/export/pdf';
@@ -38,6 +39,7 @@ export default function ServantsPage() {
   const [search, setSearch] = useState('');
   const [selectedFamilyFilter, setSelectedFamilyFilter] = useState<string>('all');
   const [viewingServant, setViewingServant] = useState<Servant | null>(null);
+  const [servantAssignmentsHistory, setServantAssignmentsHistory] = useState<ServantAcademicAssignment[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingServant, setEditingServant] = useState<Servant | null>(null);
 
@@ -71,6 +73,19 @@ export default function ServantsPage() {
   useEffect(() => {
     loadData();
   }, [currentRole, assignedFamilyId]);
+
+  const openViewServant = (srv: Servant) => {
+    setViewingServant(srv);
+    setServantAssignmentsHistory([]);
+    fetch(`/api/servants/${srv.id}/history`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          setServantAssignmentsHistory(data.assignments || []);
+        }
+      })
+      .catch(console.error);
+  };
 
   const openCreateModal = () => {
     setEditingServant(null);
@@ -386,7 +401,7 @@ export default function ServantsPage() {
 
                 <div className="flex items-center gap-1.5">
                   <button
-                    onClick={() => setViewingServant(srv)}
+                    onClick={() => openViewServant(srv)}
                     className="p-1.5 rounded-xl border border-[#EAE3E4] text-[#81777A] hover:bg-[#FAF5F6] hover:text-[#702C3B] transition-colors"
                     title="عرض السجل الكامل"
                   >
@@ -467,25 +482,35 @@ export default function ServantsPage() {
                 </div>
 
                 <div className="p-3 bg-white rounded-xl border border-[#EAE3E4]">
-                  <div className="font-bold text-[#421923] mb-2">إحصائيات الأداء والمشاركات الفعلية:</div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-                    <div className="p-2 rounded-lg bg-[#FAF5F6]">
-                      <span className="text-[10px] text-[#81777A] block">الأنشطة</span>
-                      <span className="font-bold text-[#702C3B]">{viewingServant.activities_count || 0}</span>
-                    </div>
-                    <div className="p-2 rounded-lg bg-[#FAF5F6]">
-                      <span className="text-[10px] text-[#81777A] block">إعداد درس</span>
-                      <span className="font-bold text-[#702C3B]">{viewingServant.lesson_prep_count || 0}</span>
-                    </div>
-                    <div className="p-2 rounded-lg bg-[#FAF5F6]">
-                      <span className="text-[10px] text-[#81777A] block">شرح درس</span>
-                      <span className="font-bold text-[#702C3B]">{viewingServant.lesson_explain_count || 0}</span>
-                    </div>
-                    <div className="p-2 rounded-lg bg-[#FAF5F6]">
-                      <span className="text-[10px] text-[#81777A] block">نسبة الحضور</span>
-                      <span className="font-bold text-[#10B981]">{viewingServant.attendance_rate || 100}%</span>
-                    </div>
+                  <div className="font-bold text-[#421923] mb-2 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <GraduationCap className="w-4 h-4 text-[#702C3B]" />
+                      المسار والتعيينات الكنسية عبر الأعوام:
+                    </span>
+                    <span className="text-[11px] text-[#81777A] font-normal">
+                      {servantAssignmentsHistory.length} فترات مسجلة
+                    </span>
                   </div>
+                  {servantAssignmentsHistory.length === 0 ? (
+                    <div className="text-gray-400 text-[11px] text-center py-2">
+                      لا توجد تعيينات تاريخية مسجلة بعد لهذا الخادم
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                      {servantAssignmentsHistory.map((ah) => (
+                        <div key={ah.id} className="p-2 bg-[#FAF5F6] rounded-lg border border-[#EAE3E4] flex items-center justify-between text-[11px]">
+                          <div>
+                            <span className="font-bold text-[#702C3B]">{ah.academic_year_name || ah.academic_year_id}: </span>
+                            <span className="text-gray-700">{ah.family_name}</span>
+                            <span className="text-gray-500"> ({ah.stage || 'عام'})</span>
+                          </div>
+                          <span className="px-2 py-0.5 rounded bg-white border border-gray-200 font-bold text-[#421923]">
+                            {ah.role_in_family || 'خادم مسؤول'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -419,3 +419,110 @@ export interface ChurchNotification {
   created_at: string;
 }
 
+export interface PromotionRule {
+  id: string;
+  from_family_id: string;
+  from_family_name?: string;
+  from_stage: string;
+  to_family_id?: string | null;
+  to_family_name?: string | null;
+  to_stage?: string | null;
+  is_graduation: boolean;
+  action_type?: 'promote' | 'graduate' | 'retain' | 'stop';
+  notes?: string;
+  order_index: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface MemberAcademicHistory {
+  id: string;
+  member_id: string;
+  academic_year_id: string;
+  academic_year_name?: string;
+  family_id: string;
+  family_name?: string;
+  stage?: string | null;
+  servant_id?: string | null;
+  servant_name?: string | null;
+  code: string;
+  status: 'active' | 'promoted' | 'retained' | 'graduated' | 'transferred' | 'stopped';
+  notes?: string | null;
+  attendance_rate?: number;
+  created_at: string;
+}
+
+export interface AnnualPromotionLog {
+  id: string;
+  from_academic_year_id: string;
+  from_academic_year_name?: string;
+  to_academic_year_id: string;
+  to_academic_year_name?: string;
+  total_eligible: number;
+  promoted_count: number;
+  graduated_count: number;
+  retained_count: number;
+  exceptions_count: number;
+  executed_by: string;
+  executed_by_name: string;
+  executed_at: string;
+  status: 'completed' | 'rolled_back';
+  snapshot_data?: any;
+}
+
+export interface ServantAcademicAssignment {
+  id: string;
+  servant_id: string;
+  servant_name?: string;
+  servant_phone?: string;
+  academic_year_id: string;
+  academic_year_name?: string;
+  family_id: string;
+  family_name?: string;
+  stage?: string | null;
+  role_in_family: string; // 'أمين أسرة' | 'أمين مساعد' | 'خادم مسؤول' | 'خادم مساعد'
+  is_active: boolean;
+  created_at?: string;
+}
+
+export interface PromotionPreviewItem {
+  member_id: string;
+  full_name: string;
+  member_name?: string;
+  current_code: string;
+  current_family_id: string;
+  current_family_name: string;
+  current_stage: string;
+  current_servant_id?: string | null;
+  current_servant_name?: string | null;
+  target_family_id?: string | null;
+  target_family_name?: string | null;
+  target_stage?: string | null;
+  target_code?: string;
+  target_servant_id?: string | null;
+  target_servant_name?: string | null;
+  status: 'promote' | 'graduate' | 'retain' | 'exception_needed' | string;
+  proposed_status?: string;
+  is_exception?: boolean;
+  exception_reason?: string;
+  custom_decision?: {
+    family_id?: string;
+    stage?: string;
+    servant_id?: string;
+    action?: 'promote' | 'retain' | 'graduate' | 'stop' | 'transfer';
+    notes?: string;
+  };
+}
+
+export interface AnnualPromotionPreview {
+  fromYear: AcademicYear;
+  toYear: AcademicYear;
+  alreadyPromoted: boolean;
+  totalMembers: number;
+  promotedCount: number;
+  graduatedCount: number;
+  retainedCount: number;
+  exceptionsCount: number;
+  items: PromotionPreviewItem[];
+}
+

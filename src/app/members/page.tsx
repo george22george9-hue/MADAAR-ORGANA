@@ -8,7 +8,7 @@
 import React, { useEffect, useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/lib/context/auth-context';
-import { ServedMember, Family, Servant, MemberHistoryLog } from '@/types/organa';
+import { ServedMember, Family, Servant, MemberHistoryLog, MemberAcademicHistory } from '@/types/organa';
 import {
   Users,
   Search,
@@ -30,7 +30,8 @@ import {
   Trash2,
   MessageCircle,
   Cake,
-  CheckCircle2
+  CheckCircle2,
+  GraduationCap
 } from 'lucide-react';
 import { exportToExcel } from '@/lib/export/excel';
 import { exportToPrintablePDF } from '@/lib/export/pdf';
@@ -57,7 +58,8 @@ export default function MembersPage() {
   // Modals & Drawers
   const [viewingMember, setViewingMember] = useState<ServedMember | null>(null);
   const [memberHistory, setMemberHistory] = useState<MemberHistoryLog[]>([]);
-  const [activeHistoryTab, setActiveHistoryTab] = useState<'info' | 'history'>('info');
+  const [academicHistory, setAcademicHistory] = useState<MemberAcademicHistory[]>([]);
+  const [activeHistoryTab, setActiveHistoryTab] = useState<'info' | 'history' | 'academic'>('info');
   const [showModal, setShowModal] = useState(false);
   const [editingMember, setEditingMember] = useState<ServedMember | null>(null);
 
@@ -107,9 +109,13 @@ export default function MembersPage() {
     setViewingMember(m);
     setActiveHistoryTab('info');
     try {
-      const res = await fetch(`/api/members?historyFor=${m.id}`);
-      const json = await res.json();
-      if (json.success) setMemberHistory(json.history);
+      fetch(`/api/members?historyFor=${m.id}`)
+        .then(r => r.json())
+        .then(json => { if (json.success) setMemberHistory(json.history); });
+
+      fetch(`/api/members/${m.id}/history`)
+        .then(r => r.json())
+        .then(json => { if (json.success) setAcademicHistory(json.history || []); });
     } catch (err) {
       console.error(err);
     }
@@ -710,17 +716,26 @@ export default function MembersPage() {
                   البيانات والافتقاد
                 </button>
                 <button
+                  onClick={() => setActiveHistoryTab('academic')}
+                  className={`pb-1 px-3 font-bold transition-colors flex items-center gap-1 ${
+                    activeHistoryTab === 'academic' ? 'border-b-2 border-[#702C3B] text-[#702C3B]' : 'text-[#81777A]'
+                  }`}
+                >
+                  <GraduationCap className="w-3.5 h-3.5" />
+                  <span>الأعوام الكنسية ({academicHistory.length})</span>
+                </button>
+                <button
                   onClick={() => setActiveHistoryTab('history')}
                   className={`pb-1 px-3 font-bold transition-colors flex items-center gap-1 ${
                     activeHistoryTab === 'history' ? 'border-b-2 border-[#702C3B] text-[#702C3B]' : 'text-[#81777A]'
                   }`}
                 >
                   <History className="w-3.5 h-3.5" />
-                  <span>سجل التنقلات والتاريخ ({memberHistory.length})</span>
+                  <span>سجل التنقلات ({memberHistory.length})</span>
                 </button>
               </div>
 
-              {activeHistoryTab === 'info' ? (
+              {activeHistoryTab === 'info' && (
                 <div className="space-y-3 text-xs">
                   <div className="grid grid-cols-2 gap-3 p-3 bg-[#FAF5F6] rounded-xl border border-[#EAE3E4]">
                     <div>
@@ -756,7 +771,38 @@ export default function MembersPage() {
                     <span className="text-[#282326] font-medium">{viewingMember.address || 'سندبيس'}</span>
                   </div>
                 </div>
-              ) : (
+              )}
+
+              {activeHistoryTab === 'academic' && (
+                <div className="space-y-2 max-h-72 overflow-y-auto text-xs">
+                  {academicHistory.length === 0 ? (
+                    <div className="text-center py-6 text-[#81777A]">لا يوجد سجل أعوام كنسية سابقة</div>
+                  ) : (
+                    academicHistory.map((ah) => (
+                      <div key={ah.id} className="p-3 bg-[#FAF5F6] rounded-xl border border-[#EAE3E4] space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-[#702C3B] flex items-center gap-1.5">
+                            <GraduationCap className="w-3.5 h-3.5" />
+                            العام الكنسي: {ah.academic_year_name}
+                          </span>
+                          <span className="font-mono font-bold text-xs bg-white px-2 py-0.5 rounded border border-gray-200 text-[#702C3B]">
+                            {ah.code}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-gray-700 flex items-center justify-between">
+                          <span>{ah.family_name} • {ah.stage || 'عام'}</span>
+                          <span className="font-medium text-gray-500">الخادم: {ah.servant_name || 'غير محدد'}</span>
+                        </div>
+                        <div className="text-[10px] text-gray-400">
+                          الحالة: <span className="font-semibold text-emerald-700">{ah.status}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {activeHistoryTab === 'history' && (
                 <div className="space-y-2 max-h-64 overflow-y-auto text-xs">
                   {memberHistory.length === 0 ? (
                     <div className="text-center py-6 text-[#81777A]">لا يوجد سجل تنقلات سابقة</div>

@@ -22,7 +22,8 @@ import {
   UserCheck,
   FolderTree,
   BarChart3,
-  LogOut
+  LogOut,
+  GraduationCap
 } from 'lucide-react';
 
 interface MobileNavProps {
@@ -99,6 +100,7 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
         { href: '/servants', label: 'الخدام', icon: UserCheck },
         { href: '/alerts', label: 'تنبيهات الغياب', icon: AlertTriangle },
         { href: '/reports', label: 'التقارير', icon: BarChart3 },
+        { href: '/academic-years', label: 'السنوات والترحيل', icon: GraduationCap },
         { href: '/users', label: 'إدارة المستخدمين', icon: ShieldCheck },
         { href: '/settings', label: 'الإعدادات الفنية', icon: Settings },
       ];
@@ -113,6 +115,7 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
         { href: '/notebooks', label: 'الكشاكيل والتقارير', icon: BookOpen },
         { href: '/servants', label: 'سجل الخدام', icon: UserCheck },
         { href: '/reports', label: 'التقارير الرعوية', icon: BarChart3 },
+        { href: '/academic-years', label: 'السنوات والترحيل', icon: GraduationCap },
         { href: '/users', label: 'الخدام الجدد والصلاحيات', icon: ShieldCheck },
       ];
     }
@@ -124,6 +127,7 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
         { href: '/families', label: 'الأسر', icon: FolderTree },
         { href: '/servants', label: 'الخدام', icon: UserCheck },
         { href: '/members', label: 'المخدومون', icon: Users },
+        { href: '/academic-years', label: 'السنوات والترحيل', icon: GraduationCap },
         { href: '/alerts', label: 'تنبيهات الغياب', icon: AlertTriangle },
         { href: '/users', label: 'طلبات الانضمام والصلاحيات', icon: ShieldCheck },
       ];

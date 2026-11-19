@@ -1,222 +1,225 @@
 'use client';
 
 // ====================================================================
-// ORGANA — Academic Years & Historical Archive (/academic-years)
-// The Great Martyr St. George Church – Sandbees, Egypt
+// ORGANA — Academic Years & Annual Promotion Management (/academic-years)
+// مطرانية شبرا الخيمة وتوابعها – كنيسة الشهيد العظيم مارجرجس بسندبيس
+// «ارعَ غنمي... ارعَ خرافي»
+// Developed by MADAAR Technologies
 // ====================================================================
 
 import React, { useEffect, useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/lib/context/auth-context';
-import { AcademicYear } from '@/types/organa';
+import { AcademicYear, PromotionRule, Family, Servant } from '@/types/organa';
 import {
   CalendarDays,
-  Plus,
-  CheckCircle2,
-  Archive,
+  Sliders,
+  Wand2,
+  UserCheck,
+  History,
   GraduationCap,
-  ShieldAlert
+  ShieldAlert,
+  Sparkles
 } from 'lucide-react';
+import { YearsTab } from '@/components/academic-years/YearsTab';
+import { RulesTab } from '@/components/academic-years/RulesTab';
+import { PromotionWizardTab } from '@/components/academic-years/PromotionWizardTab';
+import { ServantAssignmentTab } from '@/components/academic-years/ServantAssignmentTab';
+import { PromotionLogsTab } from '@/components/academic-years/PromotionLogsTab';
 
 export default function AcademicYearsPage() {
   const { currentRole, canManageUsers } = useAuth();
+  const [activeTab, setActiveTab] = useState<'years' | 'rules' | 'wizard' | 'servants' | 'logs'>('years');
+
+  // State
   const [years, setYears] = useState<AcademicYear[]>([]);
+  const [rules, setRules] = useState<PromotionRule[]>([]);
+  const [families, setFamilies] = useState<Family[]>([]);
+  const [servants, setServants] = useState<Servant[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
 
-  // Form
-  const [name, setName] = useState('2027–2028');
-  const [startDate, setStartDate] = useState('2027-09-01');
-  const [endDate, setEndDate] = useState('2028-08-31');
-  const [submitting, setSubmitting] = useState(false);
+  const isPrivileged = currentRole === 'admin' || currentRole === 'priest' || currentRole === 'service_secretary';
 
-  const loadData = () => {
-    fetch('/api/academic-years')
-      .then(r => r.json())
-      .then(res => {
-        if (res.success) setYears(res.years);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+  // Fetch all initial data
+  const loadAllData = async () => {
+    try {
+      setLoading(true);
+      const [yearsRes, rulesRes, famRes, servRes] = await Promise.all([
+        fetch('/api/academic-years').then((r) => r.json()),
+        fetch('/api/academic-years/promotions/rules').then((r) => r.json()),
+        fetch('/api/families').then((r) => r.json()),
+        fetch('/api/servants').then((r) => r.json()),
+      ]);
+
+      if (yearsRes?.success) setYears(yearsRes.years || []);
+      if (rulesRes?.success) setRules(rulesRes.rules || []);
+      if (famRes?.success) setFamilies(famRes.families || []);
+      if (servRes?.success) setServants(servRes.servants || []);
+    } catch (err) {
+      console.error('Error loading academic management data:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    loadData();
+    loadAllData();
   }, []);
 
-  const handleActivateYear = async (id: string) => {
-    if (!confirm('هل أنت متأكد من تفعيل هذه السنة الكنسية؟ سيتم تحويل كافة الأسر والعمليات إليها مع الحفاظ على كافة السجلات السابقة.')) return;
-    try {
-      await fetch('/api/academic-years', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, actorRole: currentRole }),
-      });
-      loadData();
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleCreateYear = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/academic-years', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, start_date: startDate, end_date: endDate, actorRole: currentRole }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setShowModal(false);
-        loadData();
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  const activeYear = years.find((y) => y.is_active);
 
   return (
     <AppLayout>
-      <div className="space-y-6 max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-2xl p-6 border border-[#EAE3E4] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <CalendarDays className="w-5 h-5 text-[#702C3B]" />
-              <h1 className="text-xl md:text-2xl font-bold text-[#421923]">
-                السنوات الكنسية والأرشيف التاريخي
+      <div className="space-y-6 max-w-7xl mx-auto pb-12">
+        {/* Church Identity Header */}
+        <div className="bg-gradient-to-l from-white via-[#FAF5F6] to-white rounded-3xl p-6 sm:p-8 border border-[#EAE3E4] shadow-sm relative overflow-hidden">
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-bold text-[#702C3B] tracking-wide mb-1.5">
+                <Sparkles className="w-4 h-4 text-[#702C3B]" />
+                <span>مطرانية شبرا الخيمة وتوابعها – كنيسة الشهيد العظيم مارجرجس بسندبيس</span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-black text-[#421923] tracking-tight">
+                إدارة السنوات الدراسية والترحيل السنوي
               </h1>
+              <p className="text-xs text-[#81777A] mt-1 font-medium">
+                «ارعَ غنمي... ارعَ خرافي» • ترقية المراحل، توزيع الخدام، وحفظ الأرشيف التاريخي التراكمي للخدمة
+              </p>
             </div>
-            <p className="text-xs text-[#81777A]">
-              إدارة الأعوام الدراسية للخدمة، الترحيل السنوي، وأرشفة السجلات دون حذف أي بيانات سابقة
-            </p>
-          </div>
 
-          {canManageUsers && (
-            <button
-              onClick={() => setShowModal(true)}
-              className="px-4 py-2 rounded-xl bg-[#702C3B] text-white text-xs font-bold hover:bg-[#5A232F] flex items-center gap-1.5 transition-colors shadow-sm"
-            >
-              <Plus className="w-4 h-4" />
-              <span>إضافة سنة كنسية جديدة</span>
-            </button>
-          )}
-        </div>
-
-        {/* Years List */}
-        <div className="space-y-3">
-          {years.map((y) => (
-            <div
-              key={y.id}
-              className={`p-5 rounded-2xl border transition-all bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
-                y.is_active ? 'border-[#702C3B] shadow-sm bg-gradient-to-l from-white to-[#FAF5F6]' : 'border-[#EAE3E4]'
-              }`}
-            >
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <GraduationCap className="w-5 h-5 text-[#702C3B]" />
-                  <h3 className="font-bold text-lg text-[#421923]">العام الكنسي: {y.name}</h3>
-                  {y.is_active ? (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#10B981] text-white">
-                      السنة النشطة حالياً
-                    </span>
-                  ) : (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-700">
-                      مؤرشفة
-                    </span>
-                  )}
+            {/* Active Year Pill */}
+            {activeYear && (
+              <div className="shrink-0 bg-white/90 backdrop-blur-sm border border-[#702C3B]/20 rounded-2xl p-4 shadow-sm flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#702C3B] text-white flex items-center justify-center shadow-inner">
+                  <GraduationCap className="w-5 h-5" />
                 </div>
-
-                <div className="text-xs text-[#81777A] mt-1 flex items-center gap-4">
-                  <span>تاريخ البدء: {y.start_date}</span>
-                  <span>•</span>
-                  <span>تاريخ الانتهاء: {y.end_date}</span>
-                </div>
-              </div>
-
-              {!y.is_active && canManageUsers && (
-                <button
-                  onClick={() => handleActivateYear(y.id)}
-                  className="px-4 py-2 rounded-xl border border-[#EAE3E4] text-[#702C3B] hover:bg-[#FAF5F6] text-xs font-bold transition-colors"
-                >
-                  تفعيل هذه السنة
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Create Modal */}
-        {showModal && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-[#EAE3E4] space-y-4 animate-in fade-in">
-              <div className="flex items-center justify-between border-b border-[#EAE3E4] pb-3">
-                <h3 className="font-bold text-base text-[#421923]">إضافة سنة كنسية جديدة</h3>
-                <button onClick={() => setShowModal(false)} className="text-[#81777A]">✕</button>
-              </div>
-
-              <form onSubmit={handleCreateYear} className="space-y-3 text-xs">
                 <div>
-                  <label className="block font-bold text-[#282326] mb-1">مسمى السنة الكنسية:</label>
-                  <input
-                    type="text"
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="2027–2028"
-                    className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B]"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block font-bold text-[#282326] mb-1">تاريخ البدء:</label>
-                    <input
-                      type="date"
-                      required
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-bold text-[#282326] mb-1">تاريخ الانتهاء:</label>
-                    <input
-                      type="date"
-                      required
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-[#EAE3E4] focus:outline-none focus:border-[#702C3B]"
-                    />
+                  <div className="text-[10px] text-gray-500 font-bold">السنة الكنسية النشطة</div>
+                  <div className="text-base font-black text-[#421923]">{activeYear.name}</div>
+                  <div className="text-[10px] text-emerald-600 font-semibold font-mono">
+                    {activeYear.start_date} ➔ {activeYear.end_date}
                   </div>
                 </div>
+              </div>
+            )}
+          </div>
+        </div>
 
-                <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#EAE3E4]">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className="px-4 py-2 rounded-xl border border-[#EAE3E4] text-[#81777A] font-bold"
-                  >
-                    إلغاء
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="px-5 py-2 rounded-xl bg-[#702C3B] text-white font-bold hover:bg-[#5A232F]"
-                  >
-                    {submitting ? 'جارٍ الحفظ...' : 'حفظ السنة'}
-                  </button>
-                </div>
-              </form>
-            </div>
+        {/* Navigation Tabs */}
+        <div className="bg-white rounded-2xl border border-[#EAE3E4] p-1.5 shadow-sm flex flex-wrap gap-1">
+          <button
+            onClick={() => setActiveTab('years')}
+            className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'years'
+                ? 'bg-[#702C3B] text-white shadow-sm'
+                : 'text-gray-600 hover:text-[#702C3B] hover:bg-[#FAF5F6]'
+            }`}
+          >
+            <CalendarDays className="w-4 h-4" />
+            <span>السنوات الكنسية ({years.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('rules')}
+            className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'rules'
+                ? 'bg-[#702C3B] text-white shadow-sm'
+                : 'text-gray-600 hover:text-[#702C3B] hover:bg-[#FAF5F6]'
+            }`}
+          >
+            <Sliders className="w-4 h-4" />
+            <span>قواعد الانتقال ({rules.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('wizard')}
+            className={`flex-1 min-w-[150px] py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'wizard'
+                ? 'bg-[#702C3B] text-white shadow-sm'
+                : 'text-gray-600 hover:text-[#702C3B] hover:bg-[#FAF5F6]'
+            }`}
+          >
+            <Wand2 className="w-4 h-4" />
+            <span>معالج الترحيل السنوي</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('servants')}
+            className={`flex-1 min-w-[140px] py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'servants'
+                ? 'bg-[#702C3B] text-white shadow-sm'
+                : 'text-gray-600 hover:text-[#702C3B] hover:bg-[#FAF5F6]'
+            }`}
+          >
+            <UserCheck className="w-4 h-4" />
+            <span>توزيع الخدام السنوي</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('logs')}
+            className={`flex-1 min-w-[120px] py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'logs'
+                ? 'bg-[#702C3B] text-white shadow-sm'
+                : 'text-gray-600 hover:text-[#702C3B] hover:bg-[#FAF5F6]'
+            }`}
+          >
+            <History className="w-4 h-4" />
+            <span>سجل الترحيل والأرشيف</span>
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        {loading ? (
+          <div className="bg-white rounded-2xl border border-[#EAE3E4] p-12 text-center text-xs text-gray-400">
+            جاري تحميل بيانات المنظومة...
+          </div>
+        ) : (
+          <div>
+            {activeTab === 'years' && (
+              <YearsTab
+                years={years}
+                canManage={isPrivileged}
+                onRefresh={loadAllData}
+              />
+            )}
+
+            {activeTab === 'rules' && (
+              <RulesTab
+                rules={rules}
+                families={families}
+                canManage={isPrivileged}
+                onRefresh={loadAllData}
+              />
+            )}
+
+            {activeTab === 'wizard' && (
+              <PromotionWizardTab
+                years={years}
+                families={families}
+                canManage={isPrivileged}
+                onSuccess={loadAllData}
+              />
+            )}
+
+            {activeTab === 'servants' && (
+              <ServantAssignmentTab
+                years={years}
+                families={families}
+                servants={servants}
+                canManage={isPrivileged}
+                onRefresh={loadAllData}
+              />
+            )}
+
+            {activeTab === 'logs' && (
+              <PromotionLogsTab
+                canManage={isPrivileged}
+                onRefresh={loadAllData}
+              />
+            )}
           </div>
         )}
       </div>
     </AppLayout>
   );
 }
-

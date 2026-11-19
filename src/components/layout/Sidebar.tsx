@@ -20,7 +20,8 @@ import {
   ShieldCheck,
   Settings,
   HeartHandshake,
-  BarChart3
+  BarChart3,
+  GraduationCap
 } from 'lucide-react';
 
 interface NavItem {
@@ -46,6 +47,7 @@ export function Sidebar() {
         { href: '/servants', label: 'الخدام', icon: UserCheck },
         { href: '/alerts', label: 'تنبيهات الغياب', icon: AlertTriangle },
         { href: '/reports', label: 'التقارير', icon: BarChart3 },
+        { href: '/academic-years', label: 'السنوات والترحيل السنوي', icon: GraduationCap },
         { href: '/users', label: 'إدارة المستخدمين', icon: ShieldCheck },
         { href: '/settings', label: 'الإعدادات الفنية', icon: Settings },
       ];
@@ -61,6 +63,7 @@ export function Sidebar() {
         { href: '/notebooks', label: 'الكشاكيل والتقارير', icon: BookOpen },
         { href: '/servants', label: 'سجل الخدام', icon: UserCheck },
         { href: '/reports', label: 'التقارير الرعوية', icon: BarChart3 },
+        { href: '/academic-years', label: 'السنوات والترحيل السنوي', icon: GraduationCap },
         { href: '/users', label: 'الخدام الجدد والصلاحيات', icon: ShieldCheck },
       ];
     }
@@ -74,6 +77,7 @@ export function Sidebar() {
         { href: '/families', label: 'الأسر والقطاعات', icon: FolderTree },
         { href: '/servants', label: 'الخدام', icon: UserCheck },
         { href: '/members', label: 'المخدومون', icon: Users },
+        { href: '/academic-years', label: 'السنوات والترحيل السنوي', icon: GraduationCap },
         { href: '/alerts', label: 'تنبيهات الغياب', icon: AlertTriangle },
         { href: '/users', label: 'طلبات الانضمام والصلاحيات', icon: ShieldCheck },
       ];

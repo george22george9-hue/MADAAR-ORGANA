@@ -19,6 +19,13 @@ import {
   Meeting,
   AbsenceAlert,
   ChurchNotification,
+  AcademicYear,
+  PromotionRule,
+  MemberAcademicHistory,
+  AnnualPromotionLog,
+  ServantAcademicAssignment,
+  AnnualPromotionPreview,
+  PromotionPreviewItem,
 } from '@/types/organa';
 import { getStagesForFamily, getFamilyCodeLetter, getStageCodeLetter } from '@/lib/constants/stages';
 
@@ -1947,4 +1954,967 @@ export async function completeFollowupTaskPg(
     WHERE id = $3
   `, [result, notes || null, taskId]);
   return true;
+}
+
+// ====================================================================
+// 13. Audit Logging (سجل العمليات الرعوية والإدارية)
+// ====================================================================
+export async function logAuditActionPg(
+  actor: { id?: string; name?: string; role?: string },
+  action: string,
+  recordType: string,
+  recordId: string,
+  description: string,
+  previousValue?: any,
+  newValue?: any,
+  ipAddress?: string
+): Promise<void> {
+  try {
+    const id = `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    await queryPg(`
+      INSERT INTO audit_logs (id, user_id, user_name, user_role, action, record_type, record_id, description, previous_value, new_value, ip_address, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())
+    `, [
+      id,
+      actor.id || null,
+      actor.name || 'مستخدم المنظومة',
+      actor.role || 'admin',
+      action,
+      recordType,
+      recordId,
+      description,
+      previousValue ? JSON.stringify(previousValue) : null,
+      newValue ? JSON.stringify(newValue) : null,
+      ipAddress || null,
+    ]);
+  } catch (err) {
+    console.error('Failed to write to audit_logs:', err);
+  }
+}
+
+// ====================================================================
+// 14. Academic Years Management (إدارة الأعوام الكنسية)
+// ====================================================================
+export async function getAcademicYearsPg(): Promise<AcademicYear[]> {
+  const rows = await queryPg(`
+    SELECT * FROM academic_years ORDER BY start_date DESC
+  `);
+  return rows.map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    start_date: r.start_date instanceof Date ? r.start_date.toISOString().split('T')[0] : String(r.start_date).split('T')[0],
+    end_date: r.end_date instanceof Date ? r.end_date.toISOString().split('T')[0] : String(r.end_date).split('T')[0],
+    is_active: Boolean(r.is_active),
+    is_archived: Boolean(r.is_archived),
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+    updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at),
+  }));
+}
+
+export async function getActiveAcademicYearPg(): Promise<AcademicYear | null> {
+  const years = await getAcademicYearsPg();
+  return years.find(y => y.is_active) || years[0] || null;
+}
+
+export async function createAcademicYearPg(
+  name: string,
+  startDate: string,
+  endDate: string,
+  actor?: { id: string; name: string; role: string }
+): Promise<AcademicYear> {
+  const cleanName = name.trim();
+  const id = `ay-${cleanName.replace(/[^0-9]/g, '-')}`;
+  await queryPg(`
+    INSERT INTO academic_years (id, name, start_date, end_date, is_active, is_archived, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, false, false, now(), now())
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name,
+      start_date = EXCLUDED.start_date,
+      end_date = EXCLUDED.end_date,
+      updated_at = now()
+  `, [id, cleanName, startDate, endDate]);
+
+  if (actor) {
+    await logAuditActionPg(actor, 'CREATE_ACADEMIC_YEAR', 'academic_years', id, `إنشاء عام كنسي جديد: ${cleanName}`);
+  }
+
+  const all = await getAcademicYearsPg();
+  return all.find(y => y.id === id)!;
+}
+
+export async function activateAcademicYearPg(
+  yearId: string,
+  actor?: { id: string; name: string; role: string }
+): Promise<boolean> {
+  const pool = getPgPool()!;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Ensure only one active academic year
+    await client.query(`UPDATE academic_years SET is_active = false, updated_at = now()`);
+    await client.query(`UPDATE academic_years SET is_active = true, is_archived = false, updated_at = now() WHERE id = $1`, [yearId]);
+    await client.query(`UPDATE system_settings SET active_academic_year_id = $1, updated_at = now() WHERE id = 'default'`, [yearId]);
+    await client.query('COMMIT');
+
+    if (actor) {
+      await logAuditActionPg(actor, 'ACTIVATE_ACADEMIC_YEAR', 'academic_years', yearId, `تفعيل العام الكنسي النشط: ${yearId}`);
+    }
+    return true;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// ====================================================================
+// 15. Promotion Rules Matrix (قواعد انتقال المراحل الدراسية)
+// ====================================================================
+export async function getPromotionRulesPg(): Promise<PromotionRule[]> {
+  const sql = `
+    SELECT pr.*, 
+           f1.name as from_family_name,
+           f2.name as to_family_name
+    FROM promotion_rules pr
+    LEFT JOIN families f1 ON pr.from_family_id = f1.id
+    LEFT JOIN families f2 ON pr.to_family_id = f2.id
+    ORDER BY pr.order_index ASC, pr.from_family_id ASC
+  `;
+  const rows = await queryPg(sql);
+  return rows.map((r: any) => ({
+    id: r.id,
+    from_family_id: r.from_family_id,
+    from_family_name: r.from_family_name || r.from_family_id,
+    from_stage: r.from_stage,
+    to_family_id: r.to_family_id || null,
+    to_family_name: r.to_family_name || (r.is_graduation ? 'خريج خدمة' : null),
+    to_stage: r.to_stage || null,
+    is_graduation: Boolean(r.is_graduation),
+    order_index: Number(r.order_index || 0),
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+    updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at),
+  }));
+}
+
+export async function savePromotionRulePg(
+  rule: Partial<PromotionRule>,
+  actor?: { id: string; name: string; role: string }
+): Promise<PromotionRule> {
+  const id = rule.id || `rule-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  await queryPg(`
+    INSERT INTO promotion_rules (id, from_family_id, from_stage, to_family_id, to_stage, is_graduation, order_index, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+    ON CONFLICT (id) DO UPDATE SET
+      from_family_id = EXCLUDED.from_family_id,
+      from_stage = EXCLUDED.from_stage,
+      to_family_id = EXCLUDED.to_family_id,
+      to_stage = EXCLUDED.to_stage,
+      is_graduation = EXCLUDED.is_graduation,
+      order_index = EXCLUDED.order_index,
+      updated_at = now()
+  `, [
+    id,
+    rule.from_family_id!,
+    rule.from_stage!,
+    rule.to_family_id || null,
+    rule.to_stage || null,
+    Boolean(rule.is_graduation),
+    rule.order_index || 0,
+  ]);
+
+  if (actor) {
+    await logAuditActionPg(actor, 'SAVE_PROMOTION_RULE', 'promotion_rules', id, `تعديل قاعدة ترحيل: من ${rule.from_stage} إلى ${rule.to_stage || 'تخرج'}`);
+  }
+
+  const all = await getPromotionRulesPg();
+  return all.find(r => r.id === id)!;
+}
+
+export async function deletePromotionRulePg(
+  id: string,
+  actor?: { id: string; name: string; role: string }
+): Promise<boolean> {
+  await queryPg(`DELETE FROM promotion_rules WHERE id = $1`, [id]);
+  if (actor) {
+    await logAuditActionPg(actor, 'DELETE_PROMOTION_RULE', 'promotion_rules', id, `حذف قاعدة الترحيل رقم: ${id}`);
+  }
+  return true;
+}
+
+// ====================================================================
+// 16. Annual Promotion Engine (معالج الترحيل السنوي للمخدومين)
+// ====================================================================
+export async function getAnnualPromotionPreviewPg(
+  fromYearId: string,
+  toYearId: string
+): Promise<AnnualPromotionPreview> {
+  const years = await getAcademicYearsPg();
+  const fromYear = years.find(y => y.id === fromYearId);
+  const toYear = years.find(y => y.id === toYearId);
+  if (!fromYear || !toYear) throw new Error('العام الكنسي المحدد غير صالح');
+
+  // Check if promotion was already executed
+  const existingLog = await queryOnePg(`
+    SELECT * FROM annual_promotion_logs 
+    WHERE from_academic_year_id = $1 AND to_academic_year_id = $2 AND status = 'completed'
+  `, [fromYearId, toYearId]);
+
+  const rules = await getPromotionRulesPg();
+  const members = await getServedMembersPg();
+  const families = await getFamiliesPg();
+  const servants = await getServantsPg();
+
+  // Find servants assigned in the target year (or current baseline)
+  const targetServantAssignments = await getServantAcademicAssignmentsPg(toYearId);
+
+  // Group members into prefix counts to simulate next sequential codes
+  const nextSeqPerPrefix: Record<string, number> = {};
+
+  const items: PromotionPreviewItem[] = [];
+  let promotedCount = 0;
+  let graduatedCount = 0;
+  let retainedCount = 0;
+  let exceptionsCount = 0;
+
+  for (const m of members) {
+    const curFamObj = families.find(f => f.id === m.current_family_id);
+    const curServant = servants.find(s => s.id === m.assigned_servant_id);
+
+    // Find matching rule
+    const matchedRule = rules.find(r => 
+      r.from_family_id === m.current_family_id && 
+      r.from_stage.trim() === (m.stage || '').trim()
+    );
+
+    if (!matchedRule) {
+      exceptionsCount++;
+      items.push({
+        member_id: m.id,
+        full_name: m.full_name,
+        current_code: m.code,
+        current_family_id: m.current_family_id,
+        current_family_name: curFamObj?.name || m.current_family_id,
+        current_stage: m.stage || 'عام',
+        current_servant_id: m.assigned_servant_id,
+        current_servant_name: curServant?.full_name,
+        target_family_id: null,
+        target_family_name: null,
+        target_stage: null,
+        target_code: m.code,
+        status: 'exception_needed',
+        exception_reason: 'لا توجد قاعدة انتقال محددة لهذه المرحلة بالفصل',
+      });
+      continue;
+    }
+
+    if (matchedRule.is_graduation) {
+      graduatedCount++;
+      items.push({
+        member_id: m.id,
+        full_name: m.full_name,
+        current_code: m.code,
+        current_family_id: m.current_family_id,
+        current_family_name: curFamObj?.name || m.current_family_id,
+        current_stage: m.stage || 'عام',
+        current_servant_id: m.assigned_servant_id,
+        current_servant_name: curServant?.full_name,
+        target_family_id: matchedRule.to_family_id || null,
+        target_family_name: 'خريج الخدمة',
+        target_stage: matchedRule.to_stage || 'خريج',
+        target_code: m.code,
+        status: 'graduate',
+      });
+      continue;
+    }
+
+    // Promoted
+    promotedCount++;
+    const targetFamObj = families.find(f => f.id === matchedRule.to_family_id);
+    const famLetter = getFamilyCodeLetter(matchedRule.to_family_id, targetFamObj?.name);
+    const stageLetter = getStageCodeLetter(matchedRule.to_stage);
+    const prefix = `${famLetter}${stageLetter}`;
+
+    if (!nextSeqPerPrefix[prefix]) {
+      nextSeqPerPrefix[prefix] = 1;
+    } else {
+      nextSeqPerPrefix[prefix]++;
+    }
+    const seqStr = String(nextSeqPerPrefix[prefix]).padStart(2, '0');
+    const targetCode = `${prefix}${seqStr}`;
+
+    // Target servant in new year
+    const targetServantAssignment = targetServantAssignments.find(sa => 
+      sa.family_id === matchedRule.to_family_id && sa.stage === matchedRule.to_stage
+    );
+    const targetServantObj = servants.find(s => s.id === targetServantAssignment?.servant_id);
+
+    items.push({
+      member_id: m.id,
+      full_name: m.full_name,
+      current_code: m.code,
+      current_family_id: m.current_family_id,
+      current_family_name: curFamObj?.name || m.current_family_id,
+      current_stage: m.stage || 'عام',
+      current_servant_id: m.assigned_servant_id,
+      current_servant_name: curServant?.full_name,
+      target_family_id: matchedRule.to_family_id,
+      target_family_name: targetFamObj?.name || matchedRule.to_family_id,
+      target_stage: matchedRule.to_stage,
+      target_code: targetCode,
+      target_servant_id: targetServantObj?.id || null,
+      target_servant_name: targetServantObj?.full_name || null,
+      status: 'promote',
+    });
+  }
+
+  return {
+    fromYear,
+    toYear,
+    alreadyPromoted: Boolean(existingLog),
+    totalMembers: members.length,
+    promotedCount,
+    graduatedCount,
+    retainedCount,
+    exceptionsCount,
+    items,
+  };
+}
+
+export async function executeAnnualPromotionPg(
+  fromYearId: string,
+  toYearId: string,
+  customizedDecisions: Record<string, {
+    family_id?: string;
+    stage?: string;
+    servant_id?: string;
+    action?: 'promote' | 'retain' | 'graduate' | 'stop' | 'transfer';
+    notes?: string;
+  }> = {},
+  actor: { id: string; name: string; role: string }
+): Promise<AnnualPromotionLog> {
+  const pool = getPgPool()!;
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // 1. Check if duplicate promotion was already run
+    const existingLog = (await client.query(`
+      SELECT * FROM annual_promotion_logs 
+      WHERE from_academic_year_id = $1 AND to_academic_year_id = $2 AND status = 'completed'
+    `, [fromYearId, toYearId])).rows[0];
+
+    if (existingLog) {
+      throw new Error(`تم تنفيذ الترحيل من العام (${fromYearId}) إلى (${toYearId}) مسبقاً ولا يجوز تكراره`);
+    }
+
+    // 2. Fetch current active members & snapshot
+    const members = (await client.query(`SELECT * FROM served_members WHERE is_active = true ORDER BY code ASC`)).rows;
+    const rules = (await client.query(`SELECT * FROM promotion_rules ORDER BY order_index ASC`)).rows;
+    const families = (await client.query(`SELECT id, name FROM families`)).rows;
+
+    const snapshotData = {
+      timestamp: new Date().toISOString(),
+      from_academic_year_id: fromYearId,
+      to_academic_year_id: toYearId,
+      members_snapshot: members,
+    };
+
+    let promotedCount = 0;
+    let graduatedCount = 0;
+    let retainedCount = 0;
+    let exceptionsCount = 0;
+
+    // Track sequential numbers for target codes
+    const nextSeqPerPrefix: Record<string, number> = {};
+
+    for (const m of members) {
+      const decision = customizedDecisions[m.id];
+      const matchedRule = rules.find((r: any) => 
+        r.from_family_id === m.current_family_id && 
+        r.from_stage.trim() === (m.stage || '').trim()
+      );
+
+      let targetFamId = m.current_family_id;
+      let targetStage = m.stage;
+      let targetServantId = m.assigned_servant_id;
+      let targetCode = m.code;
+      let finalStatus: 'promoted' | 'retained' | 'graduated' | 'transferred' | 'stopped' = 'promoted';
+      let isActive = true;
+
+      if (decision) {
+        if (decision.action === 'retain') {
+          finalStatus = 'retained';
+          retainedCount++;
+          targetFamId = m.current_family_id;
+          targetStage = m.stage;
+        } else if (decision.action === 'graduate') {
+          finalStatus = 'graduated';
+          graduatedCount++;
+          targetStage = decision.stage || 'خريج';
+          targetFamId = decision.family_id || m.current_family_id;
+        } else if (decision.action === 'stop') {
+          finalStatus = 'stopped';
+          exceptionsCount++;
+          isActive = false;
+        } else if (decision.action === 'transfer' || decision.action === 'promote') {
+          finalStatus = decision.action === 'transfer' ? 'transferred' : 'promoted';
+          promotedCount++;
+          targetFamId = decision.family_id || m.current_family_id;
+          targetStage = decision.stage || m.stage;
+          targetServantId = decision.servant_id || null;
+        }
+      } else if (matchedRule) {
+        if (matchedRule.is_graduation) {
+          finalStatus = 'graduated';
+          graduatedCount++;
+          targetStage = matchedRule.to_stage || 'خريج';
+          targetFamId = matchedRule.to_family_id || m.current_family_id;
+        } else {
+          finalStatus = 'promoted';
+          promotedCount++;
+          targetFamId = matchedRule.to_family_id;
+          targetStage = matchedRule.to_stage;
+        }
+      } else {
+        // Fallback: Retained with exception
+        finalStatus = 'retained';
+        exceptionsCount++;
+      }
+
+      // Compute new structured code for target family + stage if promoted or transferred
+      if (finalStatus === 'promoted' || finalStatus === 'transferred') {
+        const famObj = families.find((f: any) => f.id === targetFamId);
+        const famLetter = getFamilyCodeLetter(targetFamId, famObj?.name);
+        const stageLetter = getStageCodeLetter(targetStage);
+        const prefix = `${famLetter}${stageLetter}`;
+
+        if (!nextSeqPerPrefix[prefix]) {
+          nextSeqPerPrefix[prefix] = 1;
+        } else {
+          nextSeqPerPrefix[prefix]++;
+        }
+        const seqStr = String(nextSeqPerPrefix[prefix]).padStart(2, '0');
+        targetCode = `${prefix}${seqStr}`;
+      }
+
+      // 1. Lock baseline archive in member_academic_history for fromYearId
+      const fromHistId = `mah-${m.id}-${fromYearId}`;
+      await client.query(`
+        INSERT INTO member_academic_history (id, member_id, academic_year_id, family_id, stage, servant_id, code, status, notes)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (member_id, academic_year_id) DO UPDATE SET
+          family_id = EXCLUDED.family_id,
+          stage = EXCLUDED.stage,
+          servant_id = EXCLUDED.servant_id,
+          code = EXCLUDED.code,
+          status = EXCLUDED.status
+      `, [fromHistId, m.id, fromYearId, m.current_family_id, m.stage, m.assigned_servant_id, m.code, finalStatus, decision?.notes || null]);
+
+      // 2. Update served_members with new target values
+      await client.query(`
+        UPDATE served_members SET
+          current_family_id = $1,
+          stage = $2,
+          code = $3,
+          assigned_servant_id = $4,
+          is_active = $5,
+          updated_at = now()
+        WHERE id = $6
+      `, [targetFamId, targetStage, targetCode, targetServantId, isActive, m.id]);
+
+      // 3. Insert new year active baseline in member_academic_history for toYearId
+      const toHistId = `mah-${m.id}-${toYearId}`;
+      await client.query(`
+        INSERT INTO member_academic_history (id, member_id, academic_year_id, family_id, stage, servant_id, code, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
+        ON CONFLICT (member_id, academic_year_id) DO UPDATE SET
+          family_id = EXCLUDED.family_id,
+          stage = EXCLUDED.stage,
+          servant_id = EXCLUDED.servant_id,
+          code = EXCLUDED.code,
+          status = 'active'
+      `, [toHistId, m.id, toYearId, targetFamId, targetStage, targetServantId, targetCode]);
+
+      // 4. Log event in member_history
+      const eventId = `ev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      await client.query(`
+        INSERT INTO member_history (id, member_id, event_type, from_value, to_value, description, academic_year_id, created_by, created_at)
+        VALUES ($1, $2, 'promotion', $3, $4, $5, $6, $7, now())
+      `, [
+        eventId,
+        m.id,
+        `${m.current_family_id} - ${m.stage} (${m.code})`,
+        `${targetFamId} - ${targetStage} (${targetCode})`,
+        `ترحيل سنوي إلى العام الكنسي الجديد: ${finalStatus}`,
+        toYearId,
+        actor.name || actor.id,
+      ]);
+    }
+
+    // 5. Create annual_promotion_logs entry
+    const opId = `prom-${fromYearId}-${toYearId}`;
+    await client.query(`
+      INSERT INTO annual_promotion_logs (
+        id, from_academic_year_id, to_academic_year_id, total_eligible,
+        promoted_count, graduated_count, retained_count, exceptions_count,
+        executed_by, executed_by_name, executed_at, status, snapshot_data
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), 'completed', $11)
+      ON CONFLICT (from_academic_year_id, to_academic_year_id) DO UPDATE SET
+        total_eligible = EXCLUDED.total_eligible,
+        promoted_count = EXCLUDED.promoted_count,
+        graduated_count = EXCLUDED.graduated_count,
+        retained_count = EXCLUDED.retained_count,
+        exceptions_count = EXCLUDED.exceptions_count,
+        status = 'completed',
+        executed_at = now()
+    `, [
+      opId,
+      fromYearId,
+      toYearId,
+      members.length,
+      promotedCount,
+      graduatedCount,
+      retainedCount,
+      exceptionsCount,
+      actor.id,
+      actor.name,
+      JSON.stringify(snapshotData),
+    ]);
+
+    // 6. Activate target academic year
+    await client.query(`UPDATE academic_years SET is_active = false, updated_at = now()`);
+    await client.query(`UPDATE academic_years SET is_active = true, is_archived = false, updated_at = now() WHERE id = $1`, [toYearId]);
+    await client.query(`UPDATE system_settings SET active_academic_year_id = $1, updated_at = now() WHERE id = 'default'`, [toYearId]);
+
+    await client.query('COMMIT');
+
+    // 7. Log in audit_logs
+    await logAuditActionPg(actor, 'EXECUTE_ANNUAL_PROMOTION', 'annual_promotion_logs', opId, 
+      `اعتماد الترحيل السنوي بنجاح من (${fromYearId}) إلى (${toYearId}): ترحيل ${promotedCount} مخدوماً، تخرج ${graduatedCount}، استبقاء ${retainedCount}`
+    );
+
+    const logRow = (await queryPg(`SELECT * FROM annual_promotion_logs WHERE id = $1`, [opId]))[0];
+    return {
+      id: logRow.id,
+      from_academic_year_id: logRow.from_academic_year_id,
+      to_academic_year_id: logRow.to_academic_year_id,
+      total_eligible: Number(logRow.total_eligible),
+      promoted_count: Number(logRow.promoted_count),
+      graduated_count: Number(logRow.graduated_count),
+      retained_count: Number(logRow.retained_count),
+      exceptions_count: Number(logRow.exceptions_count),
+      executed_by: logRow.executed_by,
+      executed_by_name: logRow.executed_by_name,
+      executed_at: logRow.executed_at instanceof Date ? logRow.executed_at.toISOString() : String(logRow.executed_at),
+      status: logRow.status,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('executeAnnualPromotionPg rolled back:', err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function rollbackAnnualPromotionPg(
+  operationId: string,
+  actor: { id: string; name: string; role: string }
+): Promise<boolean> {
+  const pool = getPgPool()!;
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const op = (await client.query(`SELECT * FROM annual_promotion_logs WHERE id = $1`, [operationId])).rows[0];
+    if (!op) throw new Error('عملية الترحيل المحددة غير موجودة');
+    if (op.status === 'rolled_back') throw new Error('تم التراجع عن هذه العملية مسبقاً');
+
+    const snapshot = typeof op.snapshot_data === 'string' ? JSON.parse(op.snapshot_data) : op.snapshot_data;
+    if (!snapshot || !Array.isArray(snapshot.members_snapshot)) {
+      throw new Error('بيانات النسخة الاحتياطية للعملية غير متوفرة للتراجع الآمن');
+    }
+
+    // Restore each member to previous snapshot state
+    for (const prev of snapshot.members_snapshot) {
+      await client.query(`
+        UPDATE served_members SET
+          current_family_id = $1,
+          stage = $2,
+          code = $3,
+          assigned_servant_id = $4,
+          is_active = $5,
+          updated_at = now()
+        WHERE id = $6
+      `, [prev.current_family_id, prev.stage, prev.code, prev.assigned_servant_id, prev.is_active, prev.id]);
+    }
+
+    // Remove the target year baseline records
+    await client.query(`
+      DELETE FROM member_academic_history WHERE academic_year_id = $1
+    `, [op.to_academic_year_id]);
+
+    // Restore active status for previous year in member_academic_history
+    await client.query(`
+      UPDATE member_academic_history SET status = 'active' WHERE academic_year_id = $1
+    `, [op.from_academic_year_id]);
+
+    // Re-activate from_academic_year_id
+    await client.query(`UPDATE academic_years SET is_active = false, updated_at = now()`);
+    await client.query(`UPDATE academic_years SET is_active = true, updated_at = now() WHERE id = $1`, [op.from_academic_year_id]);
+    await client.query(`UPDATE system_settings SET active_academic_year_id = $1, updated_at = now() WHERE id = 'default'`, [op.from_academic_year_id]);
+
+    // Mark log as rolled back
+    await client.query(`
+      UPDATE annual_promotion_logs SET status = 'rolled_back' WHERE id = $1
+    `, [operationId]);
+
+    await client.query('COMMIT');
+
+    await logAuditActionPg(actor, 'ROLLBACK_ANNUAL_PROMOTION', 'annual_promotion_logs', operationId, 
+      `التراجع الآمن عن الترحيل السنوي (${op.from_academic_year_id} -> ${op.to_academic_year_id}) واستعادة بيانات المخدومين بالكامل`
+    );
+
+    return true;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('rollbackAnnualPromotionPg rolled back:', err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getAnnualPromotionLogsPg(): Promise<AnnualPromotionLog[]> {
+  const sql = `
+    SELECT apl.*,
+           y1.name as from_academic_year_name,
+           y2.name as to_academic_year_name
+    FROM annual_promotion_logs apl
+    LEFT JOIN academic_years y1 ON apl.from_academic_year_id = y1.id
+    LEFT JOIN academic_years y2 ON apl.to_academic_year_id = y2.id
+    ORDER BY apl.executed_at DESC
+  `;
+  const rows = await queryPg(sql);
+  return rows.map((r: any) => ({
+    id: r.id,
+    from_academic_year_id: r.from_academic_year_id,
+    from_academic_year_name: r.from_academic_year_name || r.from_academic_year_id,
+    to_academic_year_id: r.to_academic_year_id,
+    to_academic_year_name: r.to_academic_year_name || r.to_academic_year_id,
+    total_eligible: Number(r.total_eligible),
+    promoted_count: Number(r.promoted_count),
+    graduated_count: Number(r.graduated_count),
+    retained_count: Number(r.retained_count),
+    exceptions_count: Number(r.exceptions_count),
+    executed_by: r.executed_by,
+    executed_by_name: r.executed_by_name,
+    executed_at: r.executed_at instanceof Date ? r.executed_at.toISOString() : String(r.executed_at),
+    status: r.status,
+  }));
+}
+
+// ====================================================================
+// 17. Annual Servant Assignment Engine (التوزيع السنوي للخدام)
+// ====================================================================
+export async function getServantAcademicAssignmentsPg(
+  academicYearId: string
+): Promise<ServantAcademicAssignment[]> {
+  const sql = `
+    SELECT saa.*,
+           s.full_name as servant_name,
+           s.phone as servant_phone,
+           f.name as family_name
+    FROM servant_academic_assignments saa
+    JOIN servants s ON saa.servant_id = s.id
+    JOIN families f ON saa.family_id = f.id
+    WHERE saa.academic_year_id = $1
+    ORDER BY f.name ASC, saa.stage ASC, s.full_name ASC
+  `;
+  const rows = await queryPg(sql, [academicYearId]);
+  return rows.map((r: any) => ({
+    id: r.id,
+    servant_id: r.servant_id,
+    servant_name: r.servant_name,
+    servant_phone: r.servant_phone,
+    academic_year_id: r.academic_year_id,
+    family_id: r.family_id,
+    family_name: r.family_name,
+    stage: r.stage || null,
+    role_in_family: r.role_in_family || 'خادم',
+    is_active: Boolean(r.is_active),
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
+}
+
+export async function saveServantAcademicAssignmentsPg(
+  academicYearId: string,
+  assignments: Array<{
+    servant_id: string;
+    family_id: string;
+    stage?: string | null;
+    role_in_family?: string;
+  }>,
+  actor: { id: string; name: string; role: string }
+): Promise<boolean> {
+  const pool = getPgPool()!;
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // Remove current assignments for this academic year
+    await client.query(`DELETE FROM servant_academic_assignments WHERE academic_year_id = $1`, [academicYearId]);
+
+    // Insert new assignments
+    for (const a of assignments) {
+      const id = `saa-${a.servant_id}-${academicYearId}-${a.family_id}-${a.stage || 'gen'}`;
+      await client.query(`
+        INSERT INTO servant_academic_assignments (id, servant_id, academic_year_id, family_id, stage, role_in_family, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6, true)
+        ON CONFLICT (servant_id, academic_year_id, family_id, stage) DO UPDATE SET
+          role_in_family = EXCLUDED.role_in_family,
+          is_active = true
+      `, [id, a.servant_id, academicYearId, a.family_id, a.stage || null, a.role_in_family || 'خادم']);
+
+      // Also sync active state into servants and users if this is the active academic year
+      const isCurYearActive = (await client.query(`SELECT is_active FROM academic_years WHERE id = $1`, [academicYearId])).rows[0]?.is_active;
+      if (isCurYearActive) {
+        await client.query(`UPDATE servants SET assigned_stage = $1 WHERE id = $2`, [a.stage || null, a.servant_id]);
+        await client.query(`
+          UPDATE users SET assigned_family_id = $1, assigned_stage = $2 
+          WHERE id IN (SELECT user_id FROM servants WHERE id = $3) OR phone IN (SELECT phone FROM servants WHERE id = $3)
+        `, [a.family_id, a.stage || null, a.servant_id]);
+
+        // Keep family_servants table synced
+        const fsId = `fs-${a.family_id}-${a.servant_id}`;
+        await client.query(`
+          INSERT INTO family_servants (id, family_id, servant_id, academic_year_id, role_in_family, stage, is_active)
+          VALUES ($1, $2, $3, $4, $5, $6, true)
+          ON CONFLICT (id) DO UPDATE SET
+            role_in_family = EXCLUDED.role_in_family,
+            stage = EXCLUDED.stage,
+            is_active = true
+        `, [fsId, a.family_id, a.servant_id, academicYearId, a.role_in_family || 'خادم', a.stage || null]);
+      }
+    }
+
+    await client.query('COMMIT');
+
+    await logAuditActionPg(actor, 'SAVE_SERVANT_ASSIGNMENTS', 'servant_academic_assignments', academicYearId,
+      `حفظ وتحديث التوزيعة السنوية للخدام للعام الكنسي (${academicYearId}): ${assignments.length} تعييناً`
+    );
+
+    return true;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('saveServantAcademicAssignmentsPg rolled back:', err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function copyPreviousYearServantAssignmentsPg(
+  fromYearId: string,
+  toYearId: string,
+  actor: { id: string; name: string; role: string }
+): Promise<{ copiedCount: number }> {
+  const pool = getPgPool()!;
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const previousAssignments = (await client.query(`
+      SELECT * FROM servant_academic_assignments WHERE academic_year_id = $1
+    `, [fromYearId])).rows;
+
+    if (previousAssignments.length === 0) {
+      throw new Error(`لا توجد توزيعة مسجلة في العام الكنسي السابق (${fromYearId}) للنسخ منها`);
+    }
+
+    let copiedCount = 0;
+    for (const a of previousAssignments) {
+      const newId = `saa-${a.servant_id}-${toYearId}-${a.family_id}-${a.stage || 'gen'}`;
+      await client.query(`
+        INSERT INTO servant_academic_assignments (id, servant_id, academic_year_id, family_id, stage, role_in_family, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6, true)
+        ON CONFLICT (servant_id, academic_year_id, family_id, stage) DO UPDATE SET
+          role_in_family = EXCLUDED.role_in_family,
+          is_active = true
+      `, [newId, a.servant_id, toYearId, a.family_id, a.stage || null, a.role_in_family || 'خادم']);
+      copiedCount++;
+    }
+
+    await client.query('COMMIT');
+
+    await logAuditActionPg(actor, 'COPY_SERVANT_ASSIGNMENTS', 'servant_academic_assignments', toYearId,
+      `نسخ توزيعة الخدام من العام الكنسي (${fromYearId}) إلى (${toYearId}): ${copiedCount} خادماً`
+    );
+
+    return { copiedCount };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function compareServantAssignmentsPg(
+  fromYearId: string,
+  toYearId: string
+): Promise<{
+  retained: ServantAcademicAssignment[];
+  moved: Array<{ servant_id: string; servant_name: string; from: string; to: string }>;
+  newServants: ServantAcademicAssignment[];
+  unassigned: ServantAcademicAssignment[];
+  vacancies: Array<{ family_id: string; family_name: string; stage: string }>;
+}> {
+  const fromAssignments = await getServantAcademicAssignmentsPg(fromYearId);
+  const toAssignments = await getServantAcademicAssignmentsPg(toYearId);
+  const families = await getFamiliesPg();
+
+  const retained: ServantAcademicAssignment[] = [];
+  const moved: Array<{ servant_id: string; servant_name: string; from: string; to: string }> = [];
+  const newServants: ServantAcademicAssignment[] = [];
+  const unassigned: ServantAcademicAssignment[] = [];
+
+  for (const toA of toAssignments) {
+    const fromA = fromAssignments.find(fa => fa.servant_id === toA.servant_id);
+    if (!fromA) {
+      newServants.push(toA);
+    } else if (fromA.family_id === toA.family_id && fromA.stage === toA.stage) {
+      retained.push(toA);
+    } else {
+      moved.push({
+        servant_id: toA.servant_id,
+        servant_name: toA.servant_name || 'خادم',
+        from: `${fromA.family_name} - ${fromA.stage || 'عام'}`,
+        to: `${toA.family_name} - ${toA.stage || 'عام'}`,
+      });
+    }
+  }
+
+  for (const fromA of fromAssignments) {
+    const stillAssigned = toAssignments.some(ta => ta.servant_id === fromA.servant_id);
+    if (!stillAssigned) {
+      unassigned.push(fromA);
+    }
+  }
+
+  // Vacant stages in target year
+  const vacancies: Array<{ family_id: string; family_name: string; stage: string }> = [];
+  for (const fam of families) {
+    const stages = getStagesForFamily(fam.id, fam.name, fam.stages);
+    for (const st of stages) {
+      const hasServant = toAssignments.some(ta => ta.family_id === fam.id && ta.stage === st);
+      if (!hasServant) {
+        vacancies.push({
+          family_id: fam.id,
+          family_name: fam.name,
+          stage: st,
+        });
+      }
+    }
+  }
+
+  return { retained, moved, newServants, unassigned, vacancies };
+}
+
+// ====================================================================
+// 18. Historical Archive Profiles (الأرشيف التاريخي الدائم)
+// ====================================================================
+export async function getMemberHistoricalProfilePg(
+  memberId: string
+): Promise<{
+  member: ServedMember | null;
+  history: MemberAcademicHistory[];
+  totalYearsCount: number;
+}> {
+  const member = (await getServedMembersPg()).find(m => m.id === memberId) || null;
+  if (!member) return { member: null, history: [], totalYearsCount: 0 };
+
+  const sql = `
+    SELECT mah.*, 
+           ay.name as academic_year_name,
+           f.name as family_name,
+           s.full_name as servant_name
+    FROM member_academic_history mah
+    JOIN academic_years ay ON mah.academic_year_id = ay.id
+    JOIN families f ON mah.family_id = f.id
+    LEFT JOIN servants s ON mah.servant_id = s.id
+    WHERE mah.member_id = $1
+    ORDER BY ay.start_date DESC
+  `;
+  const rows = await queryPg(sql, [memberId]);
+  const history: MemberAcademicHistory[] = rows.map((r: any) => ({
+    id: r.id,
+    member_id: r.member_id,
+    academic_year_id: r.academic_year_id,
+    academic_year_name: r.academic_year_name,
+    family_id: r.family_id,
+    family_name: r.family_name,
+    stage: r.stage || null,
+    servant_id: r.servant_id || null,
+    servant_name: r.servant_name || null,
+    code: r.code,
+    status: r.status,
+    notes: r.notes || null,
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
+
+  return {
+    member,
+    history,
+    totalYearsCount: history.length,
+  };
+}
+
+export async function getServantHistoricalProfilePg(
+  servantId: string
+): Promise<{
+  servant: Servant | null;
+  assignments: ServantAcademicAssignment[];
+  totalYearsServed: number;
+}> {
+  const servant = (await getServantsPg()).find(s => s.id === servantId) || null;
+  if (!servant) return { servant: null, assignments: [], totalYearsServed: 0 };
+
+  const sql = `
+    SELECT saa.*,
+           ay.name as academic_year_name,
+           f.name as family_name
+    FROM servant_academic_assignments saa
+    JOIN academic_years ay ON saa.academic_year_id = ay.id
+    JOIN families f ON saa.family_id = f.id
+    WHERE saa.servant_id = $1
+    ORDER BY ay.start_date DESC
+  `;
+  const rows = await queryPg(sql, [servantId]);
+  const assignments: ServantAcademicAssignment[] = rows.map((r: any) => ({
+    id: r.id,
+    servant_id: r.servant_id,
+    servant_name: servant.full_name,
+    servant_phone: servant.phone,
+    academic_year_id: r.academic_year_id,
+    family_id: r.family_id,
+    family_name: r.family_name,
+    stage: r.stage || null,
+    role_in_family: r.role_in_family || 'خادم',
+    is_active: Boolean(r.is_active),
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
+
+  const distinctYears = new Set(assignments.map(a => a.academic_year_id)).size;
+
+  return {
+    servant,
+    assignments,
+    totalYearsServed: distinctYears,
+  };
 }
