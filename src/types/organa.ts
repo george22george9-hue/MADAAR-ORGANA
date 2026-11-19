@@ -349,6 +349,26 @@ export interface WeeklyReportStatusLog {
 
 export type AbsenceAlertType = 'consecutive' | 'sudden_drop' | 'chronic' | 'never_attended';
 
+export type AbsenceRiskCategory =
+  | 'consecutive'
+  | 'sudden_drop'
+  | 'intermittent'
+  | 'stopped_regular'
+  | 'no_history'
+  | 'new_member';
+
+export type AttendanceTrend = 'stable' | 'improving' | 'declining' | 'critical' | 'unknown';
+
+export interface AbsenceEngineThresholds {
+  consecutiveAbsenceWarning: number; // default 2
+  consecutiveAbsenceCritical: number; // default 3
+  suddenDropThresholdPct: number; // default 40 (%)
+  intermittentAbsencePct: number; // default 40 (%)
+  regularMemberMinAttendancePct: number; // default 75 (%)
+  newMemberDaysThreshold: number; // default 45 (days)
+  minimumCompletedMeetingsForPattern: number; // default 4
+}
+
 export interface AbsenceAlert {
   id: string;
   member_id: string;
@@ -362,7 +382,15 @@ export interface AbsenceAlert {
   last_attendance_date?: string;
   status: 'pending_followup' | 'in_progress' | 'resolved' | 'dismissed';
   alert_type?: AbsenceAlertType;
+  risk_category?: AbsenceRiskCategory;
+  priority_score?: number;
+  detection_reason?: string;
+  attendance_trend?: AttendanceTrend;
   suggested_action?: string;
+  suggested_servant_id?: string;
+  suggested_servant_name?: string;
+  servant_workload_count?: number;
+  is_unassigned?: boolean;
   resolved_reason?: string;
   resolved_by?: string;
   resolved_at?: string;

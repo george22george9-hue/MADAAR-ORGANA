@@ -18,6 +18,10 @@ import {
   JoinRequest,
   Meeting,
   AbsenceAlert,
+  AbsenceAlertType,
+  AbsenceRiskCategory,
+  AttendanceTrend,
+  AbsenceEngineThresholds,
   ChurchNotification,
   AcademicYear,
   PromotionRule,
@@ -1511,16 +1515,71 @@ export async function bulkSaveServantAttendancePg(
 // --------------------------------------------------------------------
 // 8. Absence Alerts & Pastoral Care
 // --------------------------------------------------------------------
+let phase2SchemaEnsured = false;
+export async function ensurePhase2SchemaPg(): Promise<void> {
+  if (phase2SchemaEnsured) return;
+  try {
+    await queryPg(`
+      ALTER TABLE absence_alerts
+        ADD COLUMN IF NOT EXISTS academic_year_id text,
+        ADD COLUMN IF NOT EXISTS alert_type text DEFAULT 'consecutive',
+        ADD COLUMN IF NOT EXISTS risk_category text,
+        ADD COLUMN IF NOT EXISTS priority_score integer DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS detection_reason text,
+        ADD COLUMN IF NOT EXISTS attendance_trend text DEFAULT 'unknown',
+        ADD COLUMN IF NOT EXISTS suggested_servant_id text,
+        ADD COLUMN IF NOT EXISTS servant_workload_count integer DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS is_unassigned boolean DEFAULT false,
+        ADD COLUMN IF NOT EXISTS resolved_reason text,
+        ADD COLUMN IF NOT EXISTS resolved_by text,
+        ADD COLUMN IF NOT EXISTS resolved_at timestamptz,
+        ADD COLUMN IF NOT EXISTS dismissed_reason text,
+        ADD COLUMN IF NOT EXISTS dismissed_by text,
+        ADD COLUMN IF NOT EXISTS dismissed_at timestamptz;
+
+      ALTER TABLE followup_tasks
+        ADD COLUMN IF NOT EXISTS academic_year_id text,
+        ADD COLUMN IF NOT EXISTS family_id text,
+        ADD COLUMN IF NOT EXISTS workflow_status text DEFAULT 'open',
+        ADD COLUMN IF NOT EXISTS priority text DEFAULT 'normal';
+
+      ALTER TABLE meetings
+        ADD COLUMN IF NOT EXISTS completed_by text,
+        ADD COLUMN IF NOT EXISTS completed_at timestamptz,
+        ADD COLUMN IF NOT EXISTS cancellation_reason text,
+        ADD COLUMN IF NOT EXISTS stage text,
+        ADD COLUMN IF NOT EXISTS lesson_teacher_id text;
+
+      ALTER TABLE meeting_attendance
+        ADD COLUMN IF NOT EXISTS family_id_at_time text,
+        ADD COLUMN IF NOT EXISTS stage_at_time text,
+        ADD COLUMN IF NOT EXISTS academic_year_id text;
+    `);
+    phase2SchemaEnsured = true;
+  } catch (err) {
+    // Non-fatal if already applied or restricted
+  }
+}
+
 export async function getAbsenceAlertsPg(filters?: {
   familyId?: string;
   status?: string;
+  academicYearId?: string;
+  riskCategory?: string;
+  priority?: string;
 }): Promise<AbsenceAlert[]> {
+  await ensurePhase2SchemaPg();
   let sql = `
-    SELECT aa.*, sm.full_name as member_name, f.name as family_name, s.full_name as assigned_servant_name
+    SELECT aa.*, 
+           sm.full_name as member_name, 
+           f.name as family_name, 
+           s.full_name as assigned_servant_name,
+           sugg_s.full_name as suggested_servant_name
     FROM absence_alerts aa
     JOIN served_members sm ON aa.member_id = sm.id
     JOIN families f ON aa.family_id = f.id
     LEFT JOIN servants s ON aa.assigned_servant_id = s.id
+    LEFT JOIN servants sugg_s ON aa.suggested_servant_id = sugg_s.id
     WHERE 1=1
   `;
   const params: any[] = [];
@@ -1532,11 +1591,24 @@ export async function getAbsenceAlertsPg(filters?: {
     params.push(filters.status);
     sql += ` AND aa.status = $${params.length}`;
   }
-  sql += ` ORDER BY aa.consecutive_absences_count DESC, aa.created_at DESC`;
+  if (filters?.academicYearId) {
+    params.push(filters.academicYearId);
+    sql += ` AND aa.academic_year_id = $${params.length}`;
+  }
+  if (filters?.riskCategory) {
+    params.push(filters.riskCategory);
+    sql += ` AND aa.risk_category = $${params.length}`;
+  }
+  sql += ` ORDER BY aa.priority_score DESC, aa.consecutive_absences_count DESC, aa.created_at DESC`;
   const rows = await queryPg(sql, params);
   return rows.map(r => ({
     ...r,
-    last_attendance_date: r.last_attendance_date instanceof Date ? r.last_attendance_date.toISOString().split('T')[0] : (r.last_attendance_date ? String(r.last_attendance_date).split('T')[0] : 'غير محدد'),
+    priority_score: typeof r.priority_score === 'number' ? r.priority_score : (parseInt(r.priority_score, 10) || 0),
+    servant_workload_count: typeof r.servant_workload_count === 'number' ? r.servant_workload_count : (parseInt(r.servant_workload_count, 10) || 0),
+    is_unassigned: Boolean(r.is_unassigned),
+    last_attendance_date: r.last_attendance_date instanceof Date 
+      ? r.last_attendance_date.toISOString().split('T')[0] 
+      : (r.last_attendance_date ? String(r.last_attendance_date).split('T')[0] : 'غير محدد'),
   }));
 }
 
@@ -3301,12 +3373,38 @@ export async function transitionFollowupTaskStatusPg(
 // --------------------------------------------------------------------
 export async function runAbsenceAnalysisEnginePg(
   academicYearId: string,
-  options?: { familyId?: string; stage?: string }
+  options?: {
+    familyId?: string;
+    stage?: string;
+    thresholds?: Partial<AbsenceEngineThresholds>;
+  }
 ): Promise<{
   analyzedMembersCount: number;
   newAlertsCreated: number;
   existingAlertsUpdated: number;
+  summaryByCategory: Record<AbsenceRiskCategory, number>;
 }> {
+  await ensurePhase2SchemaPg();
+
+  const thresholds: AbsenceEngineThresholds = {
+    consecutiveAbsenceWarning: options?.thresholds?.consecutiveAbsenceWarning ?? 2,
+    consecutiveAbsenceCritical: options?.thresholds?.consecutiveAbsenceCritical ?? 3,
+    suddenDropThresholdPct: options?.thresholds?.suddenDropThresholdPct ?? 40,
+    intermittentAbsencePct: options?.thresholds?.intermittentAbsencePct ?? 40,
+    regularMemberMinAttendancePct: options?.thresholds?.regularMemberMinAttendancePct ?? 75,
+    newMemberDaysThreshold: options?.thresholds?.newMemberDaysThreshold ?? 45,
+    minimumCompletedMeetingsForPattern: options?.thresholds?.minimumCompletedMeetingsForPattern ?? 4,
+  };
+
+  const summaryByCategory: Record<AbsenceRiskCategory, number> = {
+    consecutive: 0,
+    sudden_drop: 0,
+    intermittent: 0,
+    stopped_regular: 0,
+    no_history: 0,
+    new_member: 0,
+  };
+
   // 1. Fetch only meetings that actually took place and are marked 'completed'
   let meetingsSql = `
     SELECT id, family_id, date, title, academic_year_id
@@ -3322,12 +3420,17 @@ export async function runAbsenceAnalysisEnginePg(
 
   const meetings = await queryPg(meetingsSql, mParams);
   if (meetings.length === 0) {
-    return { analyzedMembersCount: 0, newAlertsCreated: 0, existingAlertsUpdated: 0 };
+    return {
+      analyzedMembersCount: 0,
+      newAlertsCreated: 0,
+      existingAlertsUpdated: 0,
+      summaryByCategory,
+    };
   }
 
   // 2. Fetch active served members
   let membersSql = `
-    SELECT id, full_name, code, current_family_id, stage, assigned_servant_id
+    SELECT id, full_name, code, current_family_id, stage, assigned_servant_id, registration_date
     FROM served_members
     WHERE is_active = true AND stage NOT IN ('خريج', 'متوقف')
   `;
@@ -3342,11 +3445,55 @@ export async function runAbsenceAnalysisEnginePg(
   }
   const members = await queryPg(membersSql, memParams);
 
+  // 3. Pre-query servant workload and family servant assignments
+  const servantWorkloadMap = new Map<string, number>();
+  const taskCounts = await queryPg(`
+    SELECT servant_id, COUNT(*)::int as cnt
+    FROM followup_tasks
+    WHERE is_completed = false
+    GROUP BY servant_id
+  `);
+  taskCounts.forEach((r: any) => servantWorkloadMap.set(r.servant_id, parseInt(r.cnt, 10) || 0));
+
+  const familyServantsMap = new Map<string, Array<{ id: string; name: string }>>();
+  const famServants = await queryPg(`
+    SELECT fs.family_id, fs.servant_id, s.full_name
+    FROM family_servants fs
+    JOIN servants s ON fs.servant_id = s.id
+    WHERE s.is_active = true
+  `);
+  famServants.forEach((r: any) => {
+    const arr = familyServantsMap.get(r.family_id) || [];
+    arr.push({ id: r.servant_id, name: r.full_name });
+    familyServantsMap.set(r.family_id, arr);
+  });
+
+  const memberOpenTasksMap = new Map<string, number>();
+  const memTaskCounts = await queryPg(`
+    SELECT member_id, COUNT(*)::int as cnt
+    FROM followup_tasks
+    WHERE is_completed = false
+    GROUP BY member_id
+  `);
+  memTaskCounts.forEach((r: any) => memberOpenTasksMap.set(r.member_id, parseInt(r.cnt, 10) || 0));
+
+  const unresponsiveMembersSet = new Set<string>();
+  try {
+    const unrespRows = await queryPg(`
+      SELECT DISTINCT ft.member_id
+      FROM followup_contact_logs cl
+      JOIN followup_tasks ft ON cl.task_id = ft.id
+      WHERE cl.outcome IN ('no_answer', 'unresponsive')
+    `);
+    unrespRows.forEach((r: any) => unresponsiveMembersSet.add(r.member_id));
+  } catch (e) {
+    // Non-fatal if contact logs are empty
+  }
+
   let newAlerts = 0;
   let updatedAlerts = 0;
 
   for (const member of members) {
-    // Get meetings for member's family
     const memberMeetings = meetings.filter((m: any) => m.family_id === member.current_family_id);
     if (memberMeetings.length === 0) continue;
 
@@ -3362,12 +3509,18 @@ export async function runAbsenceAnalysisEnginePg(
     const attMap = new Map<string, string>();
     attRows.forEach((r: any) => attMap.set(r.meeting_id, r.status));
 
-    // Calculate consecutive absences from newest meeting backwards
-    let consecutiveAbsences = 0;
-    let lastAttendanceDate: string | null = null;
-    let attendedCount = 0;
+    // Check total lifetime attendance records across entire system
+    const lifetimeRes = await queryOnePg(`
+      SELECT COUNT(*)::int as cnt FROM meeting_attendance WHERE member_id = $1
+    `, [member.id]);
+    const lifetimeAttendanceRecords = lifetimeRes ? parseInt(lifetimeRes.cnt, 10) : 0;
 
-    for (let i = memberMeetings.length - 1; i >= 0; i--) {
+    const totalMeetings = memberMeetings.length;
+    let attendedCount = 0;
+    let lastAttendanceDate: string | null = null;
+
+    // Scan all meetings to find total attended and most recent attendance date
+    for (let i = totalMeetings - 1; i >= 0; i--) {
       const m = memberMeetings[i];
       const status = attMap.get(m.id);
       if (status === 'present' || status === 'late') {
@@ -3375,90 +3528,331 @@ export async function runAbsenceAnalysisEnginePg(
           lastAttendanceDate = m.date instanceof Date ? m.date.toISOString().split('T')[0] : String(m.date).split('T')[0];
         }
         attendedCount++;
-        break; // Stop counting consecutive absences at first attended session
+      }
+    }
+
+    // Calculate consecutive absences from newest meeting backwards
+    let consecutiveAbsences = 0;
+    for (let i = totalMeetings - 1; i >= 0; i--) {
+      const m = memberMeetings[i];
+      const status = attMap.get(m.id);
+      if (status === 'present' || status === 'late') {
+        break;
       } else {
         consecutiveAbsences++;
       }
     }
 
-    // Determine alert type
-    let alertType: 'consecutive' | 'sudden_drop' | 'chronic' | 'never_attended' | null = null;
-    let suggestedAction = '';
-
-    if (consecutiveAbsences >= 3) {
-      alertType = 'consecutive';
-      suggestedAction = 'غياب متتالٍ لمدة 3 أسابيع أو أكثر – يتطلب افتقاداً فورياً';
-    } else if (consecutiveAbsences === 2) {
-      alertType = 'consecutive';
-      suggestedAction = 'غياب أسبوعين متتاليين – تنبيه مبكر للمتابعة';
-    } else if (memberMeetings.length >= 5 && (attendedCount / memberMeetings.length) < 0.40) {
-      alertType = 'chronic';
-      suggestedAction = 'غياب مزمن – نسبة الحضور أقل من 40% طوال السنة';
-    } else if (memberMeetings.length >= 3 && attendedCount === 0) {
-      alertType = 'never_attended';
-      suggestedAction = 'لم يحضر أي اجتماع منذ بداية السنة الكنسية';
+    // Days since registration
+    let daysSinceReg = 999;
+    if (member.registration_date) {
+      const regDate = new Date(member.registration_date);
+      if (!isNaN(regDate.getTime())) {
+        daysSinceReg = Math.floor((Date.now() - regDate.getTime()) / 86400000);
+      }
     }
 
-    if (alertType) {
-      // Check existing active alert to prevent duplicates
-      const existing = await queryOnePg(`
-        SELECT id, consecutive_absences_count FROM absence_alerts
-        WHERE member_id = $1 AND academic_year_id = $2 AND alert_type = $3
-          AND status NOT IN ('resolved', 'dismissed')
-      `, [member.id, academicYearId, alertType]);
+    // Historical vs Recent Split (for sudden drop / stopped regular)
+    let priorRate = 0;
+    let recentRate = 0;
+    if (totalMeetings >= thresholds.minimumCompletedMeetingsForPattern) {
+      const recentCount = Math.min(3, Math.max(2, Math.floor(totalMeetings / 2)));
+      const priorMeetings = memberMeetings.slice(0, totalMeetings - recentCount);
+      const recentMeetings = memberMeetings.slice(totalMeetings - recentCount);
 
-      if (existing) {
-        await queryPg(`
-          UPDATE absence_alerts SET
-            consecutive_absences_count = $2,
-            last_attendance_date = $3,
-            suggested_action = $4
-          WHERE id = $1
-        `, [existing.id, consecutiveAbsences, lastAttendanceDate, suggestedAction]);
-        updatedAlerts++;
+      const priorAttended = priorMeetings.filter((m: any) => {
+        const s = attMap.get(m.id);
+        return s === 'present' || s === 'late';
+      }).length;
+      priorRate = priorMeetings.length > 0 ? (priorAttended / priorMeetings.length) : 0;
+
+      const recentAttended = recentMeetings.filter((m: any) => {
+        const s = attMap.get(m.id);
+        return s === 'present' || s === 'late';
+      }).length;
+      recentRate = recentMeetings.length > 0 ? (recentAttended / recentMeetings.length) : 0;
+    }
+
+    // Determine Risk Category & Pattern
+    let riskCategory: AbsenceRiskCategory | null = null;
+    let alertType: AbsenceAlertType | null = null;
+    let categoryReason = '';
+    let suggestedAction = '';
+
+    // Pattern 6: New Member needing welcome/orientation follow-up
+    if (daysSinceReg <= thresholds.newMemberDaysThreshold && attendedCount <= 1) {
+      riskCategory = 'new_member';
+      alertType = 'never_attended';
+      categoryReason = `مخدوم جديد مسجل منذ ${daysSinceReg} يوماً (حضور ${attendedCount} من أصل ${totalMeetings} اجتماعات)`;
+      suggestedAction = 'اتصال ترحيبي من خادم الفصل لتعريفه بأنشطة الكنيسة وتثبيته في الخدمة';
+    }
+    // Pattern 5: No History (distinct from unexcused absence)
+    else if (totalMeetings >= 2 && lifetimeAttendanceRecords === 0) {
+      riskCategory = 'no_history';
+      alertType = 'never_attended';
+      categoryReason = 'مخدوم مسجل بدون أي سجلات حضور أو غياب سابقة بالمنظومة (انعدام تام لسجل الحضور)';
+      suggestedAction = 'التواصل مع المخدوم لتأكيد قيده والتحقق من انتظامه بفصول التربية الكنسية';
+    }
+    // Pattern 4: Stopped Regular (was >= 75% regular, missed last 2+ meetings)
+    else if (
+      totalMeetings >= thresholds.minimumCompletedMeetingsForPattern &&
+      priorRate >= (thresholds.regularMemberMinAttendancePct / 100) &&
+      consecutiveAbsences >= 2
+    ) {
+      riskCategory = 'stopped_regular';
+      alertType = 'sudden_drop';
+      categoryReason = `انقطاع مفاجئ لمخدوم كان منتظماً بنسبة ${Math.round(priorRate * 100)}% (غياب متتالٍ عن آخر ${consecutiveAbsences} اجتماعات)`;
+      suggestedAction = 'افتقاد نوعي عاجل بزيارة منزلية أو اتصال من أمين الأسرة لمعرفة سبب التوقف المفاجئ';
+    }
+    // Pattern 2: Sudden Drop (sharp decline from baseline)
+    else if (
+      totalMeetings >= thresholds.minimumCompletedMeetingsForPattern &&
+      priorRate >= 0.60 &&
+      recentRate <= 0.25 &&
+      (priorRate - recentRate) >= (thresholds.suddenDropThresholdPct / 100)
+    ) {
+      riskCategory = 'sudden_drop';
+      alertType = 'sudden_drop';
+      categoryReason = `تدهور حاد في الحضور من ${Math.round(priorRate * 100)}% سابقاً إلى ${Math.round(recentRate * 100)}% مؤخراً`;
+      suggestedAction = 'متابعة مكثفة عبر اتصال هاتفي أو جلسة كنسية لفهم الظروف ومساندة المخدوم';
+    }
+    // Pattern 1: Consecutive Absences
+    else if (consecutiveAbsences >= thresholds.consecutiveAbsenceWarning) {
+      riskCategory = 'consecutive';
+      alertType = 'consecutive';
+      if (consecutiveAbsences >= thresholds.consecutiveAbsenceCritical) {
+        categoryReason = `غياب متتالٍ لمدة ${consecutiveAbsences} أسابيع أو أكثر عن الاجتماعات المكتملة`;
+        suggestedAction = 'افتقاد فوري بزيارة منزلية أو مكالمة عاجلة من الخادم المسؤول';
       } else {
-        const alertId = `alt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+        categoryReason = `غياب أسبوعين متتاليين عن الاجتماعات المكتملة`;
+        suggestedAction = 'تنبيه مبكر للمتابعة الهاتفية للاطمئنان على المخدوم';
+      }
+    }
+    // Pattern 3: Intermittent Absences
+    else if (
+      totalMeetings >= thresholds.minimumCompletedMeetingsForPattern &&
+      ((totalMeetings - attendedCount) / totalMeetings) >= (thresholds.intermittentAbsencePct / 100)
+    ) {
+      riskCategory = 'intermittent';
+      alertType = 'chronic';
+      categoryReason = `غياب متقطع وغير منتظم (تغيب عن ${totalMeetings - attendedCount} من أصل ${totalMeetings} اجتماعات)`;
+      suggestedAction = 'متابعة أسبوعية دورية وتشجيع المخدوم على الانتظام الدائم في الكنيسة';
+    }
+
+    if (!riskCategory || !alertType) continue;
+
+    summaryByCategory[riskCategory]++;
+
+    // Transparent & Explainable Priority Score (0-100)
+    let priorityScore = 0;
+    const scoreFactors: string[] = [];
+
+    // Factor 1: Consecutive absences
+    if (consecutiveAbsences >= 3) {
+      priorityScore += 40;
+      scoreFactors.push(`غياب متتالٍ ${consecutiveAbsences} أسابيع (+40)`);
+    } else if (consecutiveAbsences === 2) {
+      priorityScore += 25;
+      scoreFactors.push(`غياب متتالٍ أسبوعين (+25)`);
+    } else if (consecutiveAbsences === 1) {
+      priorityScore += 10;
+      scoreFactors.push(`غياب الأسبوع الأخير (+10)`);
+    }
+
+    // Factor 2: Risk category severity
+    if (riskCategory === 'stopped_regular') {
+      priorityScore += 30;
+      scoreFactors.push('انقطاع مخدوم كان منتظماً (+30)');
+    } else if (riskCategory === 'sudden_drop') {
+      priorityScore += 25;
+      scoreFactors.push('هبوط حاد في معدل الحضور (+25)');
+    } else if (riskCategory === 'no_history') {
+      priorityScore += 20;
+      scoreFactors.push('انعدام تام لسجل الحضور (+20)');
+    } else if (riskCategory === 'intermittent') {
+      priorityScore += 15;
+      scoreFactors.push('غياب متكرر ومتقطع (+15)');
+    } else if (riskCategory === 'new_member') {
+      priorityScore += 15;
+      scoreFactors.push('مخدوم جديد يحتاج تثبيت (+15)');
+    }
+
+    // Factor 3: Days since last attendance
+    if (lastAttendanceDate) {
+      const daysSince = Math.floor((Date.now() - new Date(lastAttendanceDate).getTime()) / 86400000);
+      if (daysSince >= 42) {
+        priorityScore += 25;
+        scoreFactors.push(`مرور ${daysSince} يوماً على آخر حضور (+25)`);
+      } else if (daysSince >= 21) {
+        priorityScore += 15;
+        scoreFactors.push(`مرور ${daysSince} يوماً على آخر حضور (+15)`);
+      }
+    } else if (riskCategory !== 'new_member') {
+      priorityScore += 15;
+      scoreFactors.push('لم يسجل أي حضور بالسنة الكنسية (+15)');
+    }
+
+    // Factor 4: Previous unresolved follow-up tasks
+    const openTasksForMember = memberOpenTasksMap.get(member.id) || 0;
+    if (openTasksForMember > 0) {
+      priorityScore += 10;
+      scoreFactors.push('وجود مهام افتقاد معلقة سابقة (+10)');
+    }
+
+    // Factor 5: Unresponsive contact attempt
+    if (unresponsiveMembersSet.has(member.id)) {
+      priorityScore += 15;
+      scoreFactors.push('محاولة تواصل سابقة بدون رد (+15)');
+    }
+
+    // Cap score at 100
+    priorityScore = Math.min(100, Math.max(0, priorityScore));
+
+    let priorityTier: FollowupPriority = 'low';
+    if (priorityScore >= 75) priorityTier = 'urgent';
+    else if (priorityScore >= 50) priorityTier = 'high';
+    else if (priorityScore >= 25) priorityTier = 'normal';
+
+    // Attendance Trend
+    let attendanceTrend: AttendanceTrend = 'unknown';
+    if (totalMeetings < 2) {
+      attendanceTrend = 'unknown';
+    } else if (consecutiveAbsences >= 3 || riskCategory === 'stopped_regular') {
+      attendanceTrend = 'critical';
+    } else if (riskCategory === 'sudden_drop' || consecutiveAbsences === 2) {
+      attendanceTrend = 'declining';
+    } else if (recentRate > priorRate + 0.20) {
+      attendanceTrend = 'improving';
+    } else {
+      attendanceTrend = 'stable';
+    }
+
+    // Workload-Aware Servant Suggestion
+    const isUnassigned = !member.assigned_servant_id;
+    let suggestedServantId: string | null = member.assigned_servant_id || null;
+    let servantWorkloadCount = 0;
+
+    if (!isUnassigned && member.assigned_servant_id) {
+      servantWorkloadCount = servantWorkloadMap.get(member.assigned_servant_id) || 0;
+    } else {
+      const familyServants = familyServantsMap.get(member.current_family_id) || [];
+      if (familyServants.length > 0) {
+        const sorted = [...familyServants].sort((a, b) => {
+          const loadA = servantWorkloadMap.get(a.id) || 0;
+          const loadB = servantWorkloadMap.get(b.id) || 0;
+          return loadA - loadB;
+        });
+        suggestedServantId = sorted[0].id;
+        servantWorkloadCount = servantWorkloadMap.get(sorted[0].id) || 0;
+      }
+    }
+
+    const detectionReason = `${categoryReason} | تقييم الأولوية (${priorityScore}/100): ${scoreFactors.join('، ')}`;
+
+    // Idempotent Upsert into absence_alerts
+    const existing = await queryOnePg(`
+      SELECT id, consecutive_absences_count FROM absence_alerts
+      WHERE member_id = $1 AND academic_year_id = $2
+        AND status NOT IN ('resolved', 'dismissed')
+    `, [member.id, academicYearId]);
+
+    let alertId: string;
+    if (existing) {
+      alertId = existing.id;
+      await queryPg(`
+        UPDATE absence_alerts SET
+          consecutive_absences_count = $2,
+          last_attendance_date = $3,
+          alert_type = $4,
+          risk_category = $5,
+          priority_score = $6,
+          detection_reason = $7,
+          attendance_trend = $8,
+          suggested_action = $9,
+          suggested_servant_id = $10,
+          servant_workload_count = $11,
+          is_unassigned = $12
+        WHERE id = $1
+      `, [
+        existing.id,
+        consecutiveAbsences,
+        lastAttendanceDate,
+        alertType,
+        riskCategory,
+        priorityScore,
+        detectionReason,
+        attendanceTrend,
+        suggestedAction,
+        suggestedServantId,
+        servantWorkloadCount,
+        isUnassigned,
+      ]);
+      updatedAlerts++;
+    } else {
+      alertId = `alt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      await queryPg(`
+        INSERT INTO absence_alerts (
+          id, member_id, family_id, academic_year_id, assigned_servant_id,
+          consecutive_absences_count, last_attendance_date, status, alert_type,
+          risk_category, priority_score, detection_reason, attendance_trend,
+          suggested_action, suggested_servant_id, servant_workload_count,
+          is_unassigned, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending_followup', $8, $9, $10, $11, $12, $13, $14, $15, $16, now())
+      `, [
+        alertId,
+        member.id,
+        member.current_family_id,
+        academicYearId,
+        member.assigned_servant_id || null,
+        consecutiveAbsences,
+        lastAttendanceDate,
+        alertType,
+        riskCategory,
+        priorityScore,
+        detectionReason,
+        attendanceTrend,
+        suggestedAction,
+        suggestedServantId,
+        servantWorkloadCount,
+        isUnassigned,
+      ]);
+      newAlerts++;
+
+      // Create followup task if none open for this member
+      const existingTask = await queryOnePg(`
+        SELECT id, priority FROM followup_tasks
+        WHERE member_id = $1 AND is_completed = false
+      `, [member.id]);
+
+      if (!existingTask) {
+        const taskId = `tsk-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+        const taskType =
+          riskCategory === 'new_member'
+            ? 'in_church_chat'
+            : (riskCategory === 'stopped_regular' || consecutiveAbsences >= 3)
+            ? 'home_visit'
+            : 'phone_call';
+
         await queryPg(`
-          INSERT INTO absence_alerts (
-            id, member_id, family_id, academic_year_id, assigned_servant_id,
-            consecutive_absences_count, last_attendance_date, status, alert_type,
-            suggested_action, created_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending_followup', $8, $9, now())
+          INSERT INTO followup_tasks (
+            id, alert_id, academic_year_id, family_id, member_id, servant_id,
+            task_type, notes, workflow_status, priority, is_completed, due_date, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'open', $9, false, CURRENT_DATE + 7, now())
         `, [
+          taskId,
           alertId,
-          member.id,
-          member.current_family_id,
           academicYearId,
-          member.assigned_servant_id || null,
-          consecutiveAbsences,
-          lastAttendanceDate,
-          alertType,
-          suggestedAction,
+          member.current_family_id,
+          member.id,
+          member.assigned_servant_id || suggestedServantId || 'srv-admin',
+          taskType,
+          detectionReason,
+          priorityTier,
         ]);
-        newAlerts++;
 
-        // Auto-create or link followup task if none exists
-        const existingTask = await queryOnePg(`
-          SELECT id FROM followup_tasks
-          WHERE member_id = $1 AND is_completed = false
-        `, [member.id]);
-
-        if (!existingTask) {
-          const taskId = `tsk-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-          await queryPg(`
-            INSERT INTO followup_tasks (
-              id, alert_id, academic_year_id, family_id, member_id, servant_id,
-              task_type, workflow_status, priority, is_completed, due_date, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, 'phone_call', 'open', $7, false, CURRENT_DATE + 7, now())
-          `, [
-            taskId,
-            alertId,
-            academicYearId,
-            member.current_family_id,
-            member.id,
-            member.assigned_servant_id || 'srv-admin',
-            consecutiveAbsences >= 3 ? 'urgent' : 'normal',
-          ]);
+        const assignedToId = member.assigned_servant_id || suggestedServantId;
+        if (assignedToId) {
+          servantWorkloadMap.set(assignedToId, (servantWorkloadMap.get(assignedToId) || 0) + 1);
         }
       }
     }
@@ -3468,6 +3862,7 @@ export async function runAbsenceAnalysisEnginePg(
     analyzedMembersCount: members.length,
     newAlertsCreated: newAlerts,
     existingAlertsUpdated: updatedAlerts,
+    summaryByCategory,
   };
 }
 

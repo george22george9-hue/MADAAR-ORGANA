@@ -30,6 +30,8 @@ export async function GET(request: NextRequest) {
     const requestedFamilyId = searchParams.get('familyId') || undefined;
     const status = searchParams.get('status') || undefined;
     const academicYearId = searchParams.get('academicYearId') || undefined;
+    const riskCategory = searchParams.get('riskCategory') || undefined;
+    const priority = searchParams.get('priority') || undefined;
 
     // RBAC: Check family permission
     if (requestedFamilyId && !canAccessFamily(auth.user, requestedFamilyId)) {
@@ -42,7 +44,13 @@ export async function GET(request: NextRequest) {
     const targetFamily = requestedFamilyId || (canManageAll(auth.user) ? undefined : auth.user.assigned_family_id || undefined);
 
     if (isNeonConfigured()) {
-      let alerts = await getAbsenceAlertsPg({ familyId: targetFamily, status });
+      let alerts = await getAbsenceAlertsPg({
+        familyId: targetFamily,
+        status,
+        academicYearId,
+        riskCategory,
+        priority,
+      });
 
       // If user is a regular servant, filter alerts to only members in their assigned class/family or assigned to them
       const currentUser = auth.user;
@@ -100,6 +108,7 @@ export async function POST(request: NextRequest) {
       const result = await runAbsenceAnalysisEnginePg(targetYearId, {
         familyId: targetFamily || undefined,
         stage: body.stage || undefined,
+        thresholds: body.thresholds || undefined,
       });
 
       await logAuditActionPg(
