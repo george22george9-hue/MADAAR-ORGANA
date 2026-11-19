@@ -4,9 +4,10 @@
 // ORGANA — Fast Friday Attendance & Spiritual Follow-up Module (/attendance)
 // The Great Martyr St. George Church – Sandbees, Egypt
 // Developed by MADAAR Technologies
+// Enhanced for Phase 2.4: Fast Mobile Roll-call & Offline Resilience
 // ====================================================================
 
-import React, { useEffect, useState, Suspense } from 'react';
+import React, { useEffect, useState, Suspense, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/lib/context/auth-context';
@@ -32,7 +33,14 @@ import {
   AlertTriangle,
   ChevronRight,
   ChevronLeft,
-  X
+  X,
+  Zap,
+  Wifi,
+  WifiOff,
+  CloudUpload,
+  RotateCcw,
+  Clock,
+  Filter
 } from 'lucide-react';
 import { getStagesForFamily, getStageBadgeStyle } from '@/lib/constants/stages';
 
@@ -58,6 +66,14 @@ function stepFriday(currentDateStr: string, direction: -1 | 1): string {
   return `${newY}-${newM}-${newD}`;
 }
 
+const COMMON_EXCUSES = [
+  { label: 'مرض 🤒', value: 'مرض' },
+  { label: 'سفر 🚗', value: 'سفر' },
+  { label: 'امتحانات 📚', value: 'امتحانات' },
+  { label: 'ظرف عائلي 🏠', value: 'ظرف عائلي' },
+  { label: 'أخرى 💬', value: '' },
+];
+
 function AttendanceContent() {
   const searchParams = useSearchParams();
   const meetingParamId = searchParams.get('meetingId');
@@ -75,8 +91,10 @@ function AttendanceContent() {
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
 
   const [activeTab, setActiveTab] = useState<'members' | 'servants'>('members');
+  const [viewMode, setViewMode] = useState<'compact' | 'detailed'>('compact');
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'unrecorded' | 'present' | 'absent' | 'excused'>('all');
 
   // Attendance Records
   const [membersAttendance, setMembersAttendance] = useState<any[]>([]);
@@ -84,6 +102,92 @@ function AttendanceContent() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // Network & Offline Resilience
+  const [isOnline, setIsOnline] = useState(true);
+  const [offlineQueueCount, setOfflineQueueCount] = useState(0);
+  const [syncBannerMessage, setSyncBannerMessage] = useState<string>('');
+  const [hasPendingDraft, setHasPendingDraft] = useState(false);
+  const pendingDraftRef = useRef<any>(null);
+
+  // Quick Excuse Modal State
+  const [excuseModalData, setExcuseModalData] = useState<{
+    memberId: string;
+    memberName: string;
+    currentReason: string;
+  } | null>(null);
+  const [customExcuse, setCustomExcuse] = useState('');
+
+  const getDraftKey = (mId: string) => `organa_att_draft_${mId}`;
+  const OFFLINE_QUEUE_KEY = 'organa_att_offline_queue';
+
+  // Monitor network status
+  useEffect(() => {
+    setIsOnline(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+    const checkQueue = () => {
+      try {
+        const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+        if (raw) {
+          const q = JSON.parse(raw);
+          setOfflineQueueCount(Array.isArray(q) ? q.length : 0);
+        } else {
+          setOfflineQueueCount(0);
+        }
+      } catch (e) {
+        setOfflineQueueCount(0);
+      }
+    };
+
+    checkQueue();
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      setSyncBannerMessage('تم استعادة الاتصال بالإنترنت! جارٍ المزامنة السحابية... 🟢');
+      flushOfflineQueue();
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      setSyncBannerMessage('أنت الآن غير متصل بالإنترنت. وضع الحفظ المحلي في ذاكرة الهاتف مفعل 🟡');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Flush Offline Queue on Reconnect
+  const flushOfflineQueue = async () => {
+    try {
+      const rawQueue = localStorage.getItem(OFFLINE_QUEUE_KEY);
+      if (!rawQueue) return;
+      const queue = JSON.parse(rawQueue);
+      if (!Array.isArray(queue) || queue.length === 0) return;
+
+      for (const item of queue) {
+        await fetch(`/api/meetings/${item.meetingId}/attendance`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(item.payload),
+        });
+        localStorage.removeItem(getDraftKey(item.meetingId));
+      }
+
+      localStorage.removeItem(OFFLINE_QUEUE_KEY);
+      setOfflineQueueCount(0);
+      setSyncBannerMessage('تمت مزامنة كافة كشوف الحضور المحفوظة محلياً بنجاح! ☁️');
+      setTimeout(() => setSyncBannerMessage(''), 4000);
+      if (selectedMeetingId) loadAttendance(selectedMeetingId);
+    } catch (err) {
+      console.warn('Offline queue flush attempt postponed:', err);
+    }
+  };
 
   // 1. Load Families
   useEffect(() => {
@@ -139,7 +243,6 @@ function AttendanceContent() {
     if (match) {
       setSelectedMeetingId(match.id);
     } else {
-      // Auto-create meeting if not pre-populated
       fetch('/api/meetings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -174,6 +277,19 @@ function AttendanceContent() {
         if (res.success) {
           setMembersAttendance(res.members || []);
           setServantsAttendance(res.servants || []);
+          setHasUnsavedChanges(false);
+
+          // Check for existing local draft
+          try {
+            const rawDraft = localStorage.getItem(getDraftKey(mId));
+            if (rawDraft) {
+              const draft = JSON.parse(rawDraft);
+              if (draft && draft.timestamp && (Date.now() - draft.timestamp < 48 * 3600 * 1000)) {
+                pendingDraftRef.current = draft;
+                setHasPendingDraft(true);
+              }
+            }
+          } catch (e) {}
         }
         setLoading(false);
       })
@@ -186,30 +302,92 @@ function AttendanceContent() {
     }
   }, [selectedMeetingId]);
 
-  // Member Status Change
-  const handleMemberStatusChange = (memberId: string, newStatus: AttendanceStatus) => {
-    setMembersAttendance(prev =>
-      prev.map(m => (m.member_id === memberId ? { 
-        ...m, 
-        status: newStatus,
-        attended_class: newStatus === 'present' ? 1 : (newStatus === 'absent' ? 0 : m.attended_class)
-      } : m))
-    );
+  // Auto-save draft to local storage on changes
+  useEffect(() => {
+    if (!selectedMeetingId || membersAttendance.length === 0) return;
+    if (hasUnsavedChanges) {
+      try {
+        localStorage.setItem(getDraftKey(selectedMeetingId), JSON.stringify({
+          timestamp: Date.now(),
+          members: membersAttendance,
+          servants: servantsAttendance,
+        }));
+      } catch (e) {}
+    }
+  }, [membersAttendance, servantsAttendance, hasUnsavedChanges, selectedMeetingId]);
+
+  // Restore Draft
+  const handleRestoreDraft = () => {
+    if (!pendingDraftRef.current) return;
+    if (pendingDraftRef.current.members) setMembersAttendance(pendingDraftRef.current.members);
+    if (pendingDraftRef.current.servants) setServantsAttendance(pendingDraftRef.current.servants);
+    setHasPendingDraft(false);
+    setHasUnsavedChanges(true);
+    setSyncBannerMessage('تمت استعادة المسودة المحلية بنجاح! لا تنسَ الحفظ السحابي ✓');
+    setTimeout(() => setSyncBannerMessage(''), 4000);
   };
 
-  // Member Spiritual Checkbox Toggle (قداس - تناول - فصل - اعتراف)
+  const handleDiscardDraft = () => {
+    if (selectedMeetingId) localStorage.removeItem(getDraftKey(selectedMeetingId));
+    setHasPendingDraft(false);
+    pendingDraftRef.current = null;
+  };
+
+  // Member Status Change with Undo / Toggle
+  const handleMemberStatusChange = (memberId: string, targetStatus: AttendanceStatus) => {
+    setHasUnsavedChanges(true);
+    setMembersAttendance(prev =>
+      prev.map(m => {
+        if (m.member_id !== memberId) return m;
+        // If clicking the currently active status, toggle back to 'not_recorded'
+        const newStatus = m.status === targetStatus ? 'not_recorded' : targetStatus;
+        return {
+          ...m,
+          status: newStatus,
+          attended_class: newStatus === 'present' ? 1 : (newStatus === 'absent' ? 0 : m.attended_class),
+        };
+      })
+    );
+
+    // If marked excused, trigger excuse prompt
+    if (targetStatus === 'excused') {
+      const targetMember = membersAttendance.find(m => m.member_id === memberId);
+      setExcuseModalData({
+        memberId,
+        memberName: targetMember?.member_name || '',
+        currentReason: targetMember?.excuse_reason || '',
+      });
+      setCustomExcuse(targetMember?.excuse_reason || '');
+    }
+  };
+
+  // Set Excuse Reason
+  const handleSetExcuseReason = (reason: string) => {
+    if (!excuseModalData) return;
+    setHasUnsavedChanges(true);
+    setMembersAttendance(prev =>
+      prev.map(m => (m.member_id === excuseModalData.memberId ? {
+        ...m,
+        status: 'excused',
+        excuse_reason: reason
+      } : m))
+    );
+    setExcuseModalData(null);
+    setCustomExcuse('');
+  };
+
+  // Member Spiritual Checkbox Toggle
   const handleMemberCheckboxToggle = (memberId: string, field: 'attended_liturgy' | 'attended_communion' | 'attended_class' | 'attended_confession') => {
+    setHasUnsavedChanges(true);
     setMembersAttendance(prev =>
       prev.map(m => {
         if (m.member_id !== memberId) return m;
         const currentVal = m[field] ? 1 : 0;
         const newVal = currentVal ? 0 : 1;
-        
         let newStatus = m.status;
         if (field === 'attended_class') {
           newStatus = newVal ? 'present' : (m.status === 'present' ? 'absent' : m.status);
         }
-
         return {
           ...m,
           [field]: newVal,
@@ -220,14 +398,20 @@ function AttendanceContent() {
   };
 
   // Servant Status Change
-  const handleServantStatusChange = (servantId: string, newStatus: AttendanceStatus) => {
+  const handleServantStatusChange = (servantId: string, targetStatus: AttendanceStatus) => {
+    setHasUnsavedChanges(true);
     setServantsAttendance(prev =>
-      prev.map(s => (s.servant_id === servantId ? { ...s, status: newStatus } : s))
+      prev.map(s => {
+        if (s.servant_id !== servantId) return s;
+        const newStatus = s.status === targetStatus ? 'not_recorded' : targetStatus;
+        return { ...s, status: newStatus };
+      })
     );
   };
 
-  // Servant Role Checkbox Toggle (شرح افتتاحية - ورش عمل - تحضير - شرح الدرس)
+  // Servant Role Checkbox Toggle
   const handleServantCheckboxToggle = (servantId: string, field: 'did_opening' | 'did_workshop' | 'did_preparation' | 'did_lesson') => {
+    setHasUnsavedChanges(true);
     setServantsAttendance(prev =>
       prev.map(s => {
         if (s.servant_id !== servantId) return s;
@@ -244,6 +428,7 @@ function AttendanceContent() {
 
   // Bulk Mark All Present
   const handleBulkMarkPresent = () => {
+    setHasUnsavedChanges(true);
     if (activeTab === 'members') {
       setMembersAttendance(prev => prev.map(m => ({ 
         ...m, 
@@ -255,56 +440,108 @@ function AttendanceContent() {
     }
   };
 
-  // Save All Changes
+  // Reset / Clear All to Not Recorded
+  const handleResetAll = () => {
+    setHasUnsavedChanges(true);
+    if (activeTab === 'members') {
+      setMembersAttendance(prev => prev.map(m => ({ 
+        ...m, 
+        status: 'not_recorded',
+        attended_class: 0
+      })));
+    } else {
+      setServantsAttendance(prev => prev.map(s => ({ ...s, status: 'not_recorded' })));
+    }
+  };
+
+  // Save All Changes (Online & Offline Support)
   const handleSaveAll = async () => {
     if (!selectedMeetingId) return;
     setSaving(true);
     setSaveSuccess(false);
 
+    const membersPayload = {
+      type: 'bulk_members',
+      records: membersAttendance.map(m => ({
+        memberId: m.member_id,
+        status: m.status || 'not_recorded',
+        attended_liturgy: m.attended_liturgy ? 1 : 0,
+        attended_communion: m.attended_communion ? 1 : 0,
+        attended_class: m.attended_class ? 1 : 0,
+        attended_confession: m.attended_confession ? 1 : 0,
+        excuseReason: m.excuse_reason || null,
+      })),
+      actorRole: currentRole,
+    };
+
+    const servantsPayload = {
+      type: 'bulk_servants',
+      records: servantsAttendance.map(s => ({
+        servantId: s.servant_id,
+        status: s.status || 'not_recorded',
+        did_opening: s.did_opening ? 1 : 0,
+        did_workshop: s.did_workshop ? 1 : 0,
+        did_preparation: s.did_preparation ? 1 : 0,
+        did_lesson: s.did_lesson ? 1 : 0,
+        excuseReason: s.excuse_reason || null,
+      })),
+      actorRole: currentRole,
+    };
+
+    // If offline, save directly to offline queue
+    if (!navigator.onLine) {
+      try {
+        const raw = localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]';
+        const queue = JSON.parse(raw);
+        queue.push({ meetingId: selectedMeetingId, timestamp: Date.now(), payload: membersPayload });
+        queue.push({ meetingId: selectedMeetingId, timestamp: Date.now(), payload: servantsPayload });
+        localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+        setOfflineQueueCount(queue.length);
+        setHasUnsavedChanges(false);
+        setSaveSuccess(true);
+        setSyncBannerMessage('تم حفظ الكشف في ذاكرة الهاتف مؤقتاً لعدم توفر الإنترنت! ستتم المزامنة تلقائياً بمجرد عودة الاتصال 💾');
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } catch (err) {
+        console.error('Offline save failed:', err);
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    // If online, perform network save
     try {
-      // 1. Save members
       await fetch(`/api/meetings/${selectedMeetingId}/attendance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'bulk_members',
-          records: membersAttendance.map(m => ({
-            memberId: m.member_id,
-            status: m.status,
-            attended_liturgy: m.attended_liturgy ? 1 : 0,
-            attended_communion: m.attended_communion ? 1 : 0,
-            attended_class: m.attended_class ? 1 : 0,
-            attended_confession: m.attended_confession ? 1 : 0,
-            excuseReason: m.excuse_reason || null,
-          })),
-          actorRole: currentRole,
-        }),
+        body: JSON.stringify(membersPayload),
       });
 
-      // 2. Save servants
       await fetch(`/api/meetings/${selectedMeetingId}/attendance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'bulk_servants',
-          records: servantsAttendance.map(s => ({
-            servantId: s.servant_id,
-            status: s.status,
-            did_opening: s.did_opening ? 1 : 0,
-            did_workshop: s.did_workshop ? 1 : 0,
-            did_preparation: s.did_preparation ? 1 : 0,
-            did_lesson: s.did_lesson ? 1 : 0,
-            excuseReason: s.excuse_reason || null,
-          })),
-          actorRole: currentRole,
-        }),
+        body: JSON.stringify(servantsPayload),
       });
 
+      // Clear draft after successful remote commit
+      localStorage.removeItem(getDraftKey(selectedMeetingId));
+      setHasUnsavedChanges(false);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
       loadAttendance(selectedMeetingId);
     } catch (err) {
-      console.error(err);
+      console.warn('Network save failed, falling back to offline queue:', err);
+      // Fallback save to offline queue
+      const raw = localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]';
+      const queue = JSON.parse(raw);
+      queue.push({ meetingId: selectedMeetingId, timestamp: Date.now(), payload: membersPayload });
+      queue.push({ meetingId: selectedMeetingId, timestamp: Date.now(), payload: servantsPayload });
+      localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+      setOfflineQueueCount(queue.length);
+      setHasUnsavedChanges(false);
+      setSaveSuccess(true);
+      setSyncBannerMessage('تعذر الوصول للسحابة – تم تأمين الكشف في ذاكرة الهاتف مؤقتاً 💾');
+      setTimeout(() => setSaveSuccess(false), 3000);
     } finally {
       setSaving(false);
     }
@@ -315,25 +552,40 @@ function AttendanceContent() {
   const presentMembers = membersAttendance.filter(m => m.status === 'present').length;
   const absentMembers = membersAttendance.filter(m => m.status === 'absent').length;
   const excusedMembers = membersAttendance.filter(m => m.status === 'excused').length;
+  const unrecordedMembers = membersAttendance.filter(m => !m.status || m.status === 'not_recorded').length;
   const memberRate = totalMembers > 0 ? Math.round((presentMembers / totalMembers) * 100) : 0;
 
   const totalServants = servantsAttendance.length;
   const presentServants = servantsAttendance.filter(s => s.status === 'present').length;
   const absentServants = servantsAttendance.filter(s => s.status === 'absent').length;
   const excusedServants = servantsAttendance.filter(s => s.status === 'excused').length;
+  const unrecordedServants = servantsAttendance.filter(s => !s.status || s.status === 'not_recorded').length;
 
   const selectedFamily = families.find(f => f.id === selectedFamilyId);
   const currentFamilyStages = selectedFamily?.stages || getStagesForFamily(selectedFamilyId, selectedFamily?.name);
 
+  // Filtered members by search, stage, and recording status
   const filteredMembers = membersAttendance.filter(m => {
     const matchesSearch = !search || m.member_name?.includes(search) || m.code?.includes(search);
     const matchesStage = stageFilter === 'all' || m.stage === stageFilter;
-    return matchesSearch && matchesStage;
+    let matchesStatus = true;
+    if (statusFilter === 'unrecorded') matchesStatus = !m.status || m.status === 'not_recorded';
+    else if (statusFilter === 'present') matchesStatus = m.status === 'present';
+    else if (statusFilter === 'absent') matchesStatus = m.status === 'absent';
+    else if (statusFilter === 'excused') matchesStatus = m.status === 'excused';
+
+    return matchesSearch && matchesStage && matchesStatus;
   });
 
-  const filteredServants = servantsAttendance.filter(s =>
-    !search || s.servant_name?.includes(search) || s.phone?.includes(search)
-  );
+  const filteredServants = servantsAttendance.filter(s => {
+    const matchesSearch = !search || s.servant_name?.includes(search) || s.phone?.includes(search);
+    let matchesStatus = true;
+    if (statusFilter === 'unrecorded') matchesStatus = !s.status || s.status === 'not_recorded';
+    else if (statusFilter === 'present') matchesStatus = s.status === 'present';
+    else if (statusFilter === 'absent') matchesStatus = s.status === 'absent';
+    else if (statusFilter === 'excused') matchesStatus = s.status === 'excused';
+    return matchesSearch && matchesStatus;
+  });
 
   const currentCalYear = calendarMonth.getFullYear();
   const currentCalMonth = calendarMonth.getMonth();
@@ -356,9 +608,82 @@ function AttendanceContent() {
 
   return (
     <AppLayout>
-      <div className="space-y-4 max-w-xl mx-auto pb-28">
+      <div className="space-y-3.5 max-w-xl mx-auto pb-32 px-1 sm:px-0">
+        
+        {/* Network & Offline Status Banner */}
+        <div className="flex items-center justify-between bg-white rounded-2xl border border-[#EAE3E4] px-3.5 py-2 shadow-2xs text-xs">
+          <div className="flex items-center gap-2">
+            {isOnline ? (
+              <span className="flex items-center gap-1.5 font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                <Wifi className="w-3.5 h-3.5 text-emerald-600" />
+                <span>متصل بالإنترنت</span>
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200 animate-pulse">
+                <WifiOff className="w-3.5 h-3.5 text-amber-600" />
+                <span>وضع عدم الاتصال (Offline)</span>
+              </span>
+            )}
+
+            {offlineQueueCount > 0 && (
+              <span className="flex items-center gap-1 font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200 text-[10px]">
+                <CloudUpload className="w-3 h-3 text-rose-600" />
+                <span>{offlineQueueCount} معلق للمزامنة</span>
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {hasUnsavedChanges && (
+              <span className="text-[11px] font-bold text-amber-700 bg-amber-100/60 px-2.5 py-0.5 rounded-full border border-amber-300 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-ping" />
+                تعديلات غير محفوظة
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Sync / Notification Toast */}
+        {syncBannerMessage && (
+          <div className="bg-[#702C3B] text-white p-2.5 rounded-2xl text-xs font-bold shadow-md flex items-center justify-between animate-in fade-in">
+            <span>{syncBannerMessage}</span>
+            <button onClick={() => setSyncBannerMessage('')} className="text-white/80 hover:text-white">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Pending Local Draft Banner */}
+        {hasPendingDraft && (
+          <div className="bg-amber-50 border border-amber-300 p-3 rounded-2xl flex items-center justify-between gap-2 shadow-xs text-xs">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-700 shrink-0" />
+              <div>
+                <span className="font-bold text-amber-900 block">توجد مسودة حضور غير محفوظة على هذا الجهاز</span>
+                <span className="text-[10px] text-amber-800">هل ترغب في استعادة آخر تعديلات قمت بها؟</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={handleRestoreDraft}
+                className="px-2.5 py-1 bg-amber-700 hover:bg-amber-800 text-white rounded-xl font-bold text-xs"
+              >
+                استعادة ✓
+              </button>
+              <button
+                type="button"
+                onClick={handleDiscardDraft}
+                className="px-2 py-1 bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 rounded-xl text-xs"
+              >
+                تجاهل
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Top Title & Live Badge */}
-        <div className="flex items-center justify-between pt-1">
+        <div className="flex items-center justify-between pt-0.5">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-[#10B981]"></span>
             <h1 className="text-lg md:text-xl font-bold text-[#282326]">
@@ -370,12 +695,10 @@ function AttendanceContent() {
           </span>
         </div>
 
-        {/* ============================================================== */}
-        {/* DUAL SELECTOR BAR: 1) FAMILY BUTTON, 2) FRIDAY CALENDAR PICKER   */}
-        {/* ============================================================== */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* 1. زرار وقائمة اختيار الأسرة */}
-          <div className="bg-white rounded-2xl border border-[#EAE3E4] p-3.5 shadow-xs space-y-2">
+        {/* DUAL SELECTOR BAR: 1) FAMILY BUTTON, 2) FRIDAY CALENDAR PICKER */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {/* 1. الأسرة الكنسية */}
+          <div className="bg-white rounded-2xl border border-[#EAE3E4] p-3 shadow-xs space-y-1.5">
             <div className="flex items-center justify-between text-xs">
               <span className="font-bold flex items-center gap-1.5 text-[#421923]">
                 <Users className="w-4 h-4 text-[#702C3B]" />
@@ -402,8 +725,8 @@ function AttendanceContent() {
             </div>
           </div>
 
-          {/* 2. زرار ولوحة تقويم احترافية لاختيار الجمعة */}
-          <div className="bg-white rounded-2xl border border-[#EAE3E4] p-3.5 shadow-xs space-y-2">
+          {/* 2. موعد لقاء الجمعة */}
+          <div className="bg-white rounded-2xl border border-[#EAE3E4] p-3 shadow-xs space-y-1.5">
             <div className="flex items-center justify-between text-xs">
               <span className="font-bold flex items-center gap-1.5 text-[#421923]">
                 <Calendar className="w-4 h-4 text-[#702C3B]" />
@@ -451,13 +774,10 @@ function AttendanceContent() {
           </div>
         </div>
 
-        {/* ============================================================== */}
-        {/* MODAL: PROFESSIONAL FRIDAY CALENDAR PICKER                      */}
-        {/* ============================================================== */}
+        {/* MODAL: FRIDAY CALENDAR PICKER */}
         {showCalendarModal && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in">
             <div className="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl border border-[#EAE3E4] space-y-4 animate-in zoom-in-95">
-              {/* Modal Header */}
               <div className="flex items-center justify-between border-b border-[#EAE3E4] pb-3">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-full bg-[#702C3B]/10 text-[#702C3B] flex items-center justify-center font-bold">
@@ -476,7 +796,6 @@ function AttendanceContent() {
                 </button>
               </div>
 
-              {/* Month Navigation */}
               <div className="flex items-center justify-between bg-[#FAF5F6] p-2 rounded-2xl border border-[#EAE3E4]">
                 <button
                   type="button"
@@ -501,12 +820,10 @@ function AttendanceContent() {
                 </button>
               </div>
 
-              {/* Quick Jump to Closest Friday */}
               <button
                 type="button"
                 onClick={() => {
-                  const todayFriday = getClosestFriday();
-                  setSelectedDate(todayFriday);
+                  setSelectedDate(getClosestFriday());
                   setShowCalendarModal(false);
                 }}
                 className="w-full py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
@@ -515,7 +832,6 @@ function AttendanceContent() {
                 <span>الذهاب لأقرب جمعة ({getClosestFriday()})</span>
               </button>
 
-              {/* Weekday Names Header */}
               <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-[#81777A] border-b border-gray-100 pb-1.5">
                 {['سبت', 'أحد', 'اثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة'].map((dayName, idx) => (
                   <div
@@ -527,14 +843,11 @@ function AttendanceContent() {
                 ))}
               </div>
 
-              {/* Days Grid */}
               <div className="grid grid-cols-7 gap-1 text-center text-xs">
-                {/* Empty cells before month start */}
                 {Array.from({ length: startOffset }).map((_, idx) => (
                   <div key={`empty-${idx}`} className="h-9" />
                 ))}
 
-                {/* Days of the month */}
                 {Array.from({ length: daysInMonth }).map((_, idx) => {
                   const dayNum = idx + 1;
                   const dateObj = new Date(currentCalYear, currentCalMonth, dayNum);
@@ -570,7 +883,6 @@ function AttendanceContent() {
                 })}
               </div>
 
-              {/* Direct date picker fallback */}
               <div className="pt-2 border-t border-[#EAE3E4] flex items-center justify-between gap-2 text-xs">
                 <span className="text-[10px] text-[#81777A]">أو اكتب تاريخاً يدوياً:</span>
                 <input
@@ -632,7 +944,7 @@ function AttendanceContent() {
           </div>
         </div>
 
-        {/* Segmented Switch (حضور المخدومين vs مشاركات الخدام) */}
+        {/* Main Tab Switcher: المخدومين vs الخدام */}
         <div className="bg-[#EAE3E4]/60 p-1 rounded-2xl flex items-center gap-1">
           <button
             onClick={() => setActiveTab('members')}
@@ -643,7 +955,7 @@ function AttendanceContent() {
             }`}
           >
             <Users className="w-4 h-4" />
-            <span>حضور المخدومين والمتابعة الروحية ({totalMembers})</span>
+            <span>حضور المخدومين ({totalMembers})</span>
           </button>
 
           <button
@@ -655,81 +967,287 @@ function AttendanceContent() {
             }`}
           >
             <UserCheck className="w-4 h-4" />
-            <span>مشاركات الخدام والفقرات ({totalServants})</span>
+            <span>مشاركات الخدام ({totalServants})</span>
           </button>
         </div>
 
-        {/* Search & Bulk Mark Row */}
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
+        {/* Action & View Mode Switcher Toolbar */}
+        <div className="bg-white p-2.5 rounded-2xl border border-[#EAE3E4] shadow-xs space-y-2.5">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            {/* View Mode: Compact vs Detailed */}
+            {activeTab === 'members' && (
+              <div className="flex items-center bg-[#FAF5F6] p-1 rounded-xl border border-[#EAE3E4] gap-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('compact')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    viewMode === 'compact'
+                      ? 'bg-[#702C3B] text-white shadow-2xs'
+                      : 'text-[#421923] hover:bg-white'
+                  }`}
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>نداء سريع</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('detailed')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    viewMode === 'detailed'
+                      ? 'bg-[#702C3B] text-white shadow-2xs'
+                      : 'text-[#421923] hover:bg-white'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>كشف مفصل</span>
+                </button>
+              </div>
+            )}
+
+            {/* Bulk Action Buttons */}
+            <div className="flex items-center gap-1.5 mr-auto">
+              <button
+                type="button"
+                onClick={handleBulkMarkPresent}
+                className="px-3 py-1.5 rounded-xl border border-emerald-300 bg-[#ECFDF5] text-[#047857] hover:bg-emerald-100 text-xs font-bold transition-colors flex items-center gap-1 shadow-2xs"
+                title="تعليم كافة المخدومين حاضر"
+              >
+                <CheckCheck className="w-3.5 h-3.5" />
+                <span>الكل حاضر</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleResetAll}
+                className="px-2.5 py-1.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 text-xs font-bold transition-colors flex items-center gap-1"
+                title="إعادة ضبط الكل"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">إعادة ضبط</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Search Input */}
+          <div className="relative">
             <Search className="w-4 h-4 text-[#81777A] absolute right-3.5 top-3" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="بحث بالاسم أو الكود..."
-              className="w-full pr-10 pl-3 py-2.5 text-xs rounded-2xl border border-[#EAE3E4] bg-white focus:outline-none focus:border-[#702C3B] shadow-2xs"
+              className="w-full pr-10 pl-3 py-2 text-xs rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] focus:outline-none focus:border-[#702C3B] focus:bg-white"
             />
           </div>
 
-          <button
-            onClick={handleBulkMarkPresent}
-            className="px-3.5 py-2.5 rounded-2xl border border-emerald-300 bg-[#ECFDF5] text-[#047857] hover:bg-emerald-100 text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0 shadow-2xs"
-          >
-            <CheckCheck className="w-4 h-4" />
-            <span>تعليم الكل "حاضر"</span>
-          </button>
+          {/* Status Filter Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-[11px] font-bold">
+            <span className="text-[10px] text-[#81777A] shrink-0 flex items-center gap-1">
+              <Filter className="w-3 h-3" /> تصفية:
+            </span>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              className={`px-2.5 py-1 rounded-lg transition-all shrink-0 ${
+                statusFilter === 'all'
+                  ? 'bg-[#421923] text-white shadow-xs'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              الكل ({activeTab === 'members' ? totalMembers : totalServants})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('unrecorded')}
+              className={`px-2.5 py-1 rounded-lg transition-all shrink-0 ${
+                statusFilter === 'unrecorded'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
+              }`}
+            >
+              لم يُسجل بعد ({activeTab === 'members' ? unrecordedMembers : unrecordedServants})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('present')}
+              className={`px-2.5 py-1 rounded-lg transition-all shrink-0 ${
+                statusFilter === 'present'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
+              }`}
+            >
+              حاضر ({activeTab === 'members' ? presentMembers : presentServants})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('absent')}
+              className={`px-2.5 py-1 rounded-lg transition-all shrink-0 ${
+                statusFilter === 'absent'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100'
+              }`}
+            >
+              غائب ({activeTab === 'members' ? absentMembers : absentServants})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('excused')}
+              className={`px-2.5 py-1 rounded-lg transition-all shrink-0 ${
+                statusFilter === 'excused'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'bg-purple-50 text-purple-800 border border-purple-200 hover:bg-purple-100'
+              }`}
+            >
+              معتذر ({activeTab === 'members' ? excusedMembers : excusedServants})
+            </button>
+          </div>
         </div>
 
-        {/* ============================================================== */}
-        {/* LIST 1: SERVED MEMBERS LIST WITH 4 SPIRITUAL CHECKBOXES         */}
-        {/* ============================================================== */}
-        {activeTab === 'members' && (
-          <div className="space-y-3">
-            {/* Stage filter pills for current family */}
-            {currentFamilyStages.length > 1 && (
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+        {/* Stage Filter Pills */}
+        {activeTab === 'members' && currentFamilyStages.length > 1 && (
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            <button
+              type="button"
+              onClick={() => setStageFilter('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                stageFilter === 'all'
+                  ? 'bg-[#702C3B] text-white shadow-xs'
+                  : 'bg-white border border-[#EAE3E4] text-[#421923] hover:bg-[#FAF5F6]'
+              }`}
+            >
+              كافة الفصول والمراحل ({membersAttendance.length})
+            </button>
+            {currentFamilyStages.map(st => {
+              const count = membersAttendance.filter(m => m.stage === st).length;
+              return (
                 <button
+                  key={st}
                   type="button"
-                  onClick={() => setStageFilter('all')}
+                  onClick={() => setStageFilter(st)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                    stageFilter === 'all'
+                    stageFilter === st
                       ? 'bg-[#702C3B] text-white shadow-xs'
                       : 'bg-white border border-[#EAE3E4] text-[#421923] hover:bg-[#FAF5F6]'
                   }`}
                 >
-                  كافة المراحل ({membersAttendance.length})
+                  {st} ({count})
                 </button>
-                {currentFamilyStages.map(st => {
-                  const count = membersAttendance.filter(m => m.stage === st).length;
-                  return (
-                    <button
-                      key={st}
-                      type="button"
-                      onClick={() => setStageFilter(st)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                        stageFilter === st
-                          ? 'bg-[#702C3B] text-white shadow-xs'
-                          : 'bg-white border border-[#EAE3E4] text-[#421923] hover:bg-[#FAF5F6]'
-                      }`}
-                    >
-                      {st} ({count})
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+              );
+            })}
+          </div>
+        )}
 
+        {/* LIST 1: SERVED MEMBERS LIST */}
+        {activeTab === 'members' && (
+          <div className="space-y-2.5">
             {filteredMembers.length === 0 ? (
               <div className="text-center py-8 bg-white rounded-3xl border border-[#EAE3E4] text-xs text-[#81777A] p-4">
-                لا يوجد مخدومين مسجلين في هذه الأسرة حالياً. يمكنك إضافة مخدومين من صفحة «المخدومون».
+                لا توجد نتائج مطابقة لبحثك أو لتصفية الحضور الحالية.
               </div>
             ) : (
               filteredMembers.map((m) => {
                 const isPresent = m.status === 'present';
                 const isAbsent = m.status === 'absent';
                 const isExcused = m.status === 'excused';
+                const isUnrecorded = !m.status || m.status === 'not_recorded';
 
+                // ==========================================
+                // COMPACT ROLL-CALL ROW (نداء سريع فائق السرعة)
+                // ==========================================
+                if (viewMode === 'compact') {
+                  return (
+                    <div
+                      key={m.member_id}
+                      className={`bg-white rounded-2xl border p-2.5 shadow-2xs transition-all flex items-center justify-between gap-2 ${
+                        isPresent
+                          ? 'border-emerald-200 bg-emerald-50/20'
+                          : isAbsent
+                          ? 'border-rose-200 bg-rose-50/20'
+                          : isExcused
+                          ? 'border-amber-200 bg-amber-50/20'
+                          : 'border-[#EAE3E4]'
+                      }`}
+                    >
+                      {/* Member Info */}
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-700 text-[10px] font-mono font-bold border border-gray-200 shrink-0">
+                          {m.code ? (m.code.includes('-') ? m.code.split('-')[1] : m.code) : '—'}
+                        </span>
+                        <div className="min-w-0">
+                          <h4 className="font-bold text-xs sm:text-sm text-[#282326] truncate">
+                            {m.member_name}
+                          </h4>
+                          <div className="flex items-center gap-1.5 text-[10px] text-[#81777A] mt-0.5">
+                            {m.stage && (
+                              <span className="font-semibold">{m.stage}</span>
+                            )}
+                            {m.address && (
+                              <>
+                                <span>•</span>
+                                <span>{m.address}</span>
+                              </>
+                            )}
+                            {isExcused && m.excuse_reason && (
+                              <>
+                                <span>•</span>
+                                <span className="text-amber-800 font-bold bg-amber-100 px-1 rounded">{m.excuse_reason}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Rapid One-Touch 3-Button Status Selector */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleMemberStatusChange(m.member_id, 'present')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
+                            isPresent
+                              ? 'bg-emerald-600 text-white shadow-xs scale-102 ring-2 ring-emerald-300'
+                              : 'bg-gray-100 text-gray-600 hover:bg-emerald-50 hover:text-emerald-700'
+                          }`}
+                          title="حاضر"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>حاضر</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleMemberStatusChange(m.member_id, 'absent')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
+                            isAbsent
+                              ? 'bg-rose-600 text-white shadow-xs scale-102 ring-2 ring-rose-300'
+                              : 'bg-gray-100 text-gray-600 hover:bg-rose-50 hover:text-rose-700'
+                          }`}
+                          title="غائب"
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                          <span>غائب</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleMemberStatusChange(m.member_id, 'excused')}
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
+                            isExcused
+                              ? 'bg-amber-600 text-white shadow-xs scale-102 ring-2 ring-amber-300'
+                              : 'bg-gray-100 text-gray-600 hover:bg-amber-50 hover:text-amber-700'
+                          }`}
+                          title="معتذر"
+                        >
+                          <HelpCircle className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">معتذر</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // ==========================================
+                // DETAILED SPIRITUAL CARD (كشف المتابعة الروحية المفصل)
+                // ==========================================
                 return (
                   <div
                     key={m.member_id}
@@ -755,8 +1273,14 @@ function AttendanceContent() {
                           })()}
                         </div>
 
-                        {/* Confession Father & Servant */}
+                        {/* Confession Father & Servant & Town */}
                         <div className="text-[11px] text-[#81777A] mt-1 flex items-center gap-2 flex-wrap">
+                          {m.address && (
+                            <>
+                              <span>البلد: <strong className="text-[#421923]">{m.address}</strong></span>
+                              <span>•</span>
+                            </>
+                          )}
                           <span>الخادم: <strong className="text-[#421923]">{m.assigned_servant_name || 'خادم الأسرة'}</strong></span>
                           <span>•</span>
                           <span>أب الاعتراف: <strong className="text-[#702C3B]">{m.confession_father || 'لم يُحدد'}</strong></span>
@@ -776,12 +1300,17 @@ function AttendanceContent() {
                       )}
                       {isExcused && (
                         <span className="px-3 py-1 rounded-full text-xs font-bold bg-[#FEF3C7] text-[#92400E] shrink-0">
-                          ● معتذر
+                          ● معتذر {m.excuse_reason ? `(${m.excuse_reason})` : ''}
+                        </span>
+                      )}
+                      {isUnrecorded && (
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-gray-100 text-gray-600 shrink-0">
+                          لم يُسجل بعد
                         </span>
                       )}
                     </div>
 
-                    {/* 4 CHECKBOXES FOR SERVED MEMBER: (قداس - تناول - فصل - الاعتراف) */}
+                    {/* 4 CHECKBOXES FOR SERVED MEMBER */}
                     <div className="p-2.5 rounded-2xl bg-[#FAF5F6] border border-[#EAE3E4] space-y-1.5">
                       <div className="text-[10px] font-bold text-[#81777A] flex items-center justify-between">
                         <span>المتابعة الروحية وحضور الجمعة:</span>
@@ -859,7 +1388,7 @@ function AttendanceContent() {
                         onClick={() => handleMemberStatusChange(m.member_id, 'present')}
                         className={`py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                           isPresent
-                            ? 'bg-[#15803D] text-white shadow-xs'
+                            ? 'bg-[#15803D] text-white shadow-xs ring-2 ring-emerald-300'
                             : 'bg-[#F8F9FA] text-[#81777A] border border-[#EAE3E4] hover:bg-emerald-50'
                         }`}
                       >
@@ -871,7 +1400,7 @@ function AttendanceContent() {
                         onClick={() => handleMemberStatusChange(m.member_id, 'absent')}
                         className={`py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                           isAbsent
-                            ? 'bg-[#B91C1C] text-white shadow-xs'
+                            ? 'bg-[#B91C1C] text-white shadow-xs ring-2 ring-rose-300'
                             : 'bg-[#F8F9FA] text-[#81777A] border border-[#EAE3E4] hover:bg-rose-50'
                         }`}
                       >
@@ -883,7 +1412,7 @@ function AttendanceContent() {
                         onClick={() => handleMemberStatusChange(m.member_id, 'excused')}
                         className={`py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                           isExcused
-                            ? 'bg-[#854D0E] text-white shadow-xs'
+                            ? 'bg-[#854D0E] text-white shadow-xs ring-2 ring-amber-300'
                             : 'bg-[#F8F9FA] text-[#81777A] border border-[#EAE3E4] hover:bg-amber-50'
                         }`}
                       >
@@ -898,9 +1427,7 @@ function AttendanceContent() {
           </div>
         )}
 
-        {/* ============================================================== */}
-        {/* LIST 2: SERVANTS LIST WITH 4 ROLE CHECKBOXES                   */}
-        {/* ============================================================== */}
+        {/* LIST 2: SERVANTS LIST */}
         {activeTab === 'servants' && (
           <div className="space-y-3">
             {filteredServants.length === 0 ? (
@@ -918,7 +1445,6 @@ function AttendanceContent() {
                     key={s.servant_id}
                     className="bg-white rounded-3xl border border-[#EAE3E4] p-4 shadow-2xs space-y-3 hover:border-[#702C3B]/40 transition-all"
                   >
-                    {/* Servant Header */}
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <h3 className="font-bold text-sm md:text-base text-[#282326]">
@@ -931,7 +1457,6 @@ function AttendanceContent() {
                         </div>
                       </div>
 
-                      {/* Status */}
                       {isPresent && (
                         <span className="px-3 py-1 rounded-full text-xs font-bold bg-[#DCFCE7] text-[#166534]">
                           ● حاضر
@@ -949,14 +1474,13 @@ function AttendanceContent() {
                       )}
                     </div>
 
-                    {/* 4 CHECKBOXES FOR SERVANT: (شرح افتتاحية - ورش عمل - تحضير - شرح الدرس) */}
+                    {/* 4 CHECKBOXES FOR SERVANT */}
                     <div className="p-2.5 rounded-2xl bg-[#FAF5F6] border border-[#EAE3E4] space-y-1.5">
                       <span className="text-[10px] font-bold text-[#81777A] block">
                         مهام ومشاركات الخادم في لقاء الجمعة (يملأها أمين الأسرة):
                       </span>
 
                       <div className="grid grid-cols-4 gap-1.5 text-xs font-bold">
-                        {/* 1. شرح افتتاحية */}
                         <button
                           type="button"
                           onClick={() => handleServantCheckboxToggle(s.servant_id, 'did_opening')}
@@ -970,7 +1494,6 @@ function AttendanceContent() {
                           <span className="text-[9px]">{s.did_opening ? '✓ تم' : '—'}</span>
                         </button>
 
-                        {/* 2. ورش عمل */}
                         <button
                           type="button"
                           onClick={() => handleServantCheckboxToggle(s.servant_id, 'did_workshop')}
@@ -984,7 +1507,6 @@ function AttendanceContent() {
                           <span className="text-[9px]">{s.did_workshop ? '✓ تم' : '—'}</span>
                         </button>
 
-                        {/* 3. تحضير */}
                         <button
                           type="button"
                           onClick={() => handleServantCheckboxToggle(s.servant_id, 'did_preparation')}
@@ -998,7 +1520,6 @@ function AttendanceContent() {
                           <span className="text-[9px]">{s.did_preparation ? '✓ تم' : '—'}</span>
                         </button>
 
-                        {/* 4. شرح الدرس */}
                         <button
                           type="button"
                           onClick={() => handleServantCheckboxToggle(s.servant_id, 'did_lesson')}
@@ -1059,30 +1580,113 @@ function AttendanceContent() {
           </div>
         )}
 
-        {/* Floating Bottom Save Action Bar */}
-        <div className="fixed bottom-16 left-0 right-0 p-3 bg-white/90 backdrop-blur-md border-t border-[#EAE3E4] z-20 shadow-lg">
+        {/* MODAL: QUICK EXCUSE REASON SELECTOR */}
+        {excuseModalData && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in">
+            <div className="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl border border-[#EAE3E4] space-y-4 animate-in zoom-in-95">
+              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                    <HelpCircle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-[#421923]">سبب الاعتذار</h3>
+                    <div className="text-[11px] text-[#81777A]">{excuseModalData.memberName}</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExcuseModalData(null)}
+                  className="p-1 rounded-lg hover:bg-gray-100 text-gray-400"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Quick Excuse Chips */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-gray-700 block">اختر سبباً شائعاً:</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {COMMON_EXCUSES.map((exc) => (
+                    <button
+                      key={exc.label}
+                      type="button"
+                      onClick={() => handleSetExcuseReason(exc.value)}
+                      className="p-2 rounded-xl border border-amber-200 bg-amber-50/60 hover:bg-amber-100 text-amber-900 font-bold text-xs transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      {exc.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom Excuse Input */}
+              <div className="space-y-1.5 pt-2 border-t border-gray-100">
+                <label className="text-xs font-bold text-gray-700 block">أو اكتب سبباً مخصصاً:</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={customExcuse}
+                    onChange={(e) => setCustomExcuse(e.target.value)}
+                    placeholder="اكتب سبب العذر هنا..."
+                    className="flex-1 p-2 text-xs rounded-xl border border-gray-300 focus:outline-none focus:border-[#702C3B]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleSetExcuseReason(customExcuse.trim())}
+                    disabled={!customExcuse.trim()}
+                    className="px-3 py-2 bg-[#702C3B] text-white rounded-xl font-bold text-xs disabled:opacity-50"
+                  >
+                    تأكيد
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Floating Bottom Action Bar */}
+        <div className="fixed bottom-16 left-0 right-0 p-3 bg-white/95 backdrop-blur-md border-t border-[#EAE3E4] z-20 shadow-xl">
           <div className="max-w-xl mx-auto flex items-center justify-between gap-3">
             <div className="text-xs font-semibold text-[#81777A]">
               {saveSuccess ? (
                 <span className="text-emerald-700 font-bold flex items-center gap-1">
                   <Check className="w-4 h-4" />
-                  تم حفظ سجل الجمعة بنجاح!
+                  تم الحفظ بنجاح!
+                </span>
+              ) : hasUnsavedChanges ? (
+                <span className="text-amber-700 font-bold flex items-center gap-1">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 animate-pulse" />
+                  تعديلات غير محفوظة
                 </span>
               ) : (
-                <span>تأكد من حفظ التعديلات بعد تسجيل الملاحظات</span>
+                <span className="text-gray-500">
+                  {isOnline ? 'الكشف متزامن مع السحابة ✓' : 'الحفظ المحلي مؤمن 💾'}
+                </span>
               )}
             </div>
 
             <button
               onClick={handleSaveAll}
               disabled={saving}
-              className="px-6 py-2.5 rounded-2xl bg-[#702C3B] hover:bg-[#5A232F] text-white font-bold text-xs transition-all shadow-md flex items-center gap-2 active:scale-95 disabled:opacity-50"
+              className={`px-6 py-2.5 rounded-2xl font-bold text-xs transition-all shadow-md flex items-center gap-2 active:scale-95 disabled:opacity-50 text-white ${
+                hasUnsavedChanges
+                  ? 'bg-amber-600 hover:bg-amber-700 ring-2 ring-amber-300 animate-pulse'
+                  : 'bg-[#702C3B] hover:bg-[#5A232F]'
+              }`}
             >
               <Save className="w-4 h-4" />
-              <span>{saving ? 'جارٍ الحفظ...' : 'حفظ سجل اللقاء والأنشطة'}</span>
+              <span>
+                {saving
+                  ? 'جارٍ الحفظ...'
+                  : isOnline
+                  ? 'حفظ السجل السحابي'
+                  : 'حفظ محلي (Offline)'}
+              </span>
             </button>
           </div>
         </div>
+
       </div>
     </AppLayout>
   );

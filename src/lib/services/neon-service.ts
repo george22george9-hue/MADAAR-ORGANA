@@ -3641,22 +3641,32 @@ export async function runAbsenceAnalysisEnginePg(
 
     if (!riskCategory || !alertType) continue;
 
+    // Specific adjustment for no_history:
+    // A member with zero attendance records must NOT receive consecutive absence or duration points,
+    // as lack of records does not prove unexcused absence.
+    if (riskCategory === 'no_history') {
+      consecutiveAbsences = 0;
+      lastAttendanceDate = null;
+    }
+
     summaryByCategory[riskCategory]++;
 
     // Transparent & Explainable Priority Score (0-100)
     let priorityScore = 0;
     const scoreFactors: string[] = [];
 
-    // Factor 1: Consecutive absences
-    if (consecutiveAbsences >= 3) {
-      priorityScore += 40;
-      scoreFactors.push(`غياب متتالٍ ${consecutiveAbsences} أسابيع (+40)`);
-    } else if (consecutiveAbsences === 2) {
-      priorityScore += 25;
-      scoreFactors.push(`غياب متتالٍ أسبوعين (+25)`);
-    } else if (consecutiveAbsences === 1) {
-      priorityScore += 10;
-      scoreFactors.push(`غياب الأسبوع الأخير (+10)`);
+    // Factor 1: Consecutive absences (applicable only when consecutive absences are confirmed)
+    if (riskCategory !== 'no_history') {
+      if (consecutiveAbsences >= 3) {
+        priorityScore += 40;
+        scoreFactors.push(`غياب متتالٍ ${consecutiveAbsences} أسابيع (+40)`);
+      } else if (consecutiveAbsences === 2) {
+        priorityScore += 25;
+        scoreFactors.push(`غياب متتالٍ أسبوعين (+25)`);
+      } else if (consecutiveAbsences === 1) {
+        priorityScore += 10;
+        scoreFactors.push(`غياب الأسبوع الأخير (+10)`);
+      }
     }
 
     // Factor 2: Risk category severity
@@ -3677,19 +3687,21 @@ export async function runAbsenceAnalysisEnginePg(
       scoreFactors.push('مخدوم جديد يحتاج تثبيت (+15)');
     }
 
-    // Factor 3: Days since last attendance
-    if (lastAttendanceDate) {
-      const daysSince = Math.floor((Date.now() - new Date(lastAttendanceDate).getTime()) / 86400000);
-      if (daysSince >= 42) {
-        priorityScore += 25;
-        scoreFactors.push(`مرور ${daysSince} يوماً على آخر حضور (+25)`);
-      } else if (daysSince >= 21) {
+    // Factor 3: Days since last attendance (applicable only when historical records exist)
+    if (riskCategory !== 'no_history') {
+      if (lastAttendanceDate) {
+        const daysSince = Math.floor((Date.now() - new Date(lastAttendanceDate).getTime()) / 86400000);
+        if (daysSince >= 42) {
+          priorityScore += 25;
+          scoreFactors.push(`مرور ${daysSince} يوماً على آخر حضور (+25)`);
+        } else if (daysSince >= 21) {
+          priorityScore += 15;
+          scoreFactors.push(`مرور ${daysSince} يوماً على آخر حضور (+15)`);
+        }
+      } else if (riskCategory !== 'new_member') {
         priorityScore += 15;
-        scoreFactors.push(`مرور ${daysSince} يوماً على آخر حضور (+15)`);
+        scoreFactors.push('لم يسجل أي حضور بالسنة الكنسية (+15)');
       }
-    } else if (riskCategory !== 'new_member') {
-      priorityScore += 15;
-      scoreFactors.push('لم يسجل أي حضور بالسنة الكنسية (+15)');
     }
 
     // Factor 4: Previous unresolved follow-up tasks
@@ -3715,7 +3727,7 @@ export async function runAbsenceAnalysisEnginePg(
 
     // Attendance Trend
     let attendanceTrend: AttendanceTrend = 'unknown';
-    if (totalMeetings < 2) {
+    if (totalMeetings < 2 || riskCategory === 'no_history') {
       attendanceTrend = 'unknown';
     } else if (consecutiveAbsences >= 3 || riskCategory === 'stopped_regular') {
       attendanceTrend = 'critical';

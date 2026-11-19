@@ -393,21 +393,28 @@ async function runVerification() {
 
         if (!riskCategory || !alertType) continue;
 
+        if (riskCategory === 'no_history') {
+          consecutiveAbsences = 0;
+          lastAttendanceDate = null;
+        }
+
         summaryByCategory[riskCategory]++;
 
         // Scoring
         let priorityScore = 0;
         const scoreFactors = [];
 
-        if (consecutiveAbsences >= 3) {
-          priorityScore += 40;
-          scoreFactors.push(`غياب متتالٍ ${consecutiveAbsences} أسابيع (+40)`);
-        } else if (consecutiveAbsences === 2) {
-          priorityScore += 25;
-          scoreFactors.push(`غياب متتالٍ أسبوعين (+25)`);
-        } else if (consecutiveAbsences === 1) {
-          priorityScore += 10;
-          scoreFactors.push(`غياب الأسبوع الأخير (+10)`);
+        if (riskCategory !== 'no_history') {
+          if (consecutiveAbsences >= 3) {
+            priorityScore += 40;
+            scoreFactors.push(`غياب متتالٍ ${consecutiveAbsences} أسابيع (+40)`);
+          } else if (consecutiveAbsences === 2) {
+            priorityScore += 25;
+            scoreFactors.push(`غياب متتالٍ أسبوعين (+25)`);
+          } else if (consecutiveAbsences === 1) {
+            priorityScore += 10;
+            scoreFactors.push(`غياب الأسبوع الأخير (+10)`);
+          }
         }
 
         if (riskCategory === 'stopped_regular') {
@@ -427,18 +434,20 @@ async function runVerification() {
           scoreFactors.push('مخدوم جديد يحتاج تثبيت (+15)');
         }
 
-        if (lastAttendanceDate) {
-          const daysSince = Math.floor((Date.now() - new Date(lastAttendanceDate).getTime()) / 86400000);
-          if (daysSince >= 42) {
-            priorityScore += 25;
-            scoreFactors.push(`مرور ${daysSince} يوماً على آخر حضور (+25)`);
-          } else if (daysSince >= 21) {
+        if (riskCategory !== 'no_history') {
+          if (lastAttendanceDate) {
+            const daysSince = Math.floor((Date.now() - new Date(lastAttendanceDate).getTime()) / 86400000);
+            if (daysSince >= 42) {
+              priorityScore += 25;
+              scoreFactors.push(`مرور ${daysSince} يوماً على آخر حضور (+25)`);
+            } else if (daysSince >= 21) {
+              priorityScore += 15;
+              scoreFactors.push(`مرور ${daysSince} يوماً على آخر حضور (+15)`);
+            }
+          } else if (riskCategory !== 'new_member') {
             priorityScore += 15;
-            scoreFactors.push(`مرور ${daysSince} يوماً على آخر حضور (+15)`);
+            scoreFactors.push('لم يسجل أي حضور بالسنة الكنسية (+15)');
           }
-        } else if (riskCategory !== 'new_member') {
-          priorityScore += 15;
-          scoreFactors.push('لم يسجل أي حضور بالسنة الكنسية (+15)');
         }
 
         const openTasksForMember = memberOpenTasksMap.get(member.id) || 0;
@@ -460,7 +469,7 @@ async function runVerification() {
         else if (priorityScore >= 25) priorityTier = 'normal';
 
         let attendanceTrend = 'unknown';
-        if (totalMeetings < 2) {
+        if (totalMeetings < 2 || riskCategory === 'no_history') {
           attendanceTrend = 'unknown';
         } else if (consecutiveAbsences >= 3 || riskCategory === 'stopped_regular') {
           attendanceTrend = 'critical';
@@ -814,9 +823,23 @@ async function runVerification() {
         SELECT * FROM sandbox_test_phase2_3.absence_alerts WHERE member_id = $1 AND academic_year_id = $2
       `, [mId, testYearId])).rows[0];
 
-      const pass = alert && alert.risk_category === 'no_history' && alert.alert_type === 'never_attended';
+      const noConsecutivePoints = !alert?.detection_reason?.includes('غياب متتالٍ');
+      const noDurationPoints = !alert?.detection_reason?.includes('مرور') && !alert?.detection_reason?.includes('لم يسجل أي حضور بالسنة الكنسية');
+      const exactScore20 = alert?.priority_score === 20;
+      const countZero = alert?.consecutive_absences_count === 0;
+      const trendUnknown = alert?.attendance_trend === 'unknown';
+
+      const pass = alert &&
+        alert.risk_category === 'no_history' &&
+        alert.alert_type === 'never_attended' &&
+        countZero &&
+        exactScore20 &&
+        trendUnknown &&
+        noConsecutivePoints &&
+        noDurationPoints;
+
       recordResult(5, 'Member with No Attendance History (no_history)', pass,
-        `Risk category='${alert?.risk_category}', alert_type='${alert?.alert_type}', reason='${alert?.detection_reason}'`
+        `Risk category='${alert?.risk_category}', consecutive_count=${alert?.consecutive_absences_count}, score=${alert?.priority_score}/100, trend='${alert?.attendance_trend}', reason='${alert?.detection_reason}'`
       );
     } catch (err) {
       recordResult(5, 'Member with No Attendance History', false, null, err);
