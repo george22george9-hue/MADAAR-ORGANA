@@ -2,7 +2,7 @@
 
 // ====================================================================
 // ORGANA — Academic Years & Annual Promotion Management (/academic-years)
-// مطرانية شبرا الخيمة وتوابعها – كنيسة الشهيد العظيم مارجرجس بسندبيس
+// ORGANA — Academic Years & Annual Promotion Engine
 // «ارعَ غنمي... ارعَ خرافي»
 // Developed by MADAAR Technologies
 // ====================================================================

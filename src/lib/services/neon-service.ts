@@ -37,6 +37,7 @@ import {
   FollowupPriority,
 } from '@/types/organa';
 import { getStagesForFamily, getFamilyCodeLetter, getStageCodeLetter } from '@/lib/constants/stages';
+import { normalizePhone } from '@/lib/utils/phone';
 
 export function isNeonConfigured(): boolean {
   // Always use Neon Cloud PostgreSQL for 100% persistent data across all deployments & Vercel
@@ -131,26 +132,69 @@ export async function createUserPg(data: {
   phone: string;
   role: UserRole;
   assigned_family_id?: string;
+  assigned_stage?: string;
   confession_father?: string;
   password?: string;
 }): Promise<ChurchUser> {
+  const rawPhone = data.phone.trim();
+  const cleanPhone = normalizePhone(rawPhone) || rawPhone;
   const id = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const rawPass = data.password ? data.password.trim() : 'George-O229';
   const passwordHash = await hashPassword(rawPass);
 
   await queryPg(`
-    INSERT INTO users (id, email, full_name, phone, role, assigned_family_id, confession_father, password_hash, is_active)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+    INSERT INTO users (id, email, full_name, phone, role, assigned_family_id, assigned_stage, confession_father, password_hash, is_active)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
   `, [
     id,
-    data.email?.trim() || `${data.phone}@organa.eg`,
+    data.email?.trim() || `${cleanPhone}@organa.eg`,
     data.full_name.trim(),
-    data.phone.trim(),
+    cleanPhone,
     data.role,
     data.assigned_family_id || null,
+    data.assigned_stage?.trim() || null,
     data.confession_father?.trim() || null,
     passwordHash,
   ]);
+
+  // If role is servant or family_leader, link or create profile in servants
+  if (data.role === 'servant' || data.role === 'family_leader') {
+    const existingServant = await queryOnePg(
+      `SELECT id FROM servants WHERE phone = $1 OR phone = $2`,
+      [rawPhone, cleanPhone]
+    );
+    if (existingServant) {
+      await queryPg(`UPDATE servants SET user_id = $1 WHERE id = $2`, [id, existingServant.id]);
+    } else {
+      const sId = `srv-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      await queryPg(`
+        INSERT INTO servants (id, full_name, phone, confession_father, joining_date, is_active, user_id, assigned_stage)
+        VALUES ($1, $2, $3, $4, CURRENT_DATE, true, $5, $6)
+      `, [
+        sId,
+        data.full_name.trim(),
+        cleanPhone,
+        data.confession_father?.trim() || null,
+        id,
+        data.assigned_stage?.trim() || null,
+      ]);
+
+      if (data.assigned_family_id) {
+        const fsId = `fs-${data.assigned_family_id}-${sId}`;
+        await queryPg(`
+          INSERT INTO family_servants (id, family_id, servant_id, academic_year_id, role_in_family, stage)
+          VALUES ($1, $2, $3, 'ay-2026-2027', $4, $5)
+          ON CONFLICT (id) DO NOTHING
+        `, [
+          fsId,
+          data.assigned_family_id,
+          sId,
+          data.role === 'family_leader' ? 'أمين أسرة' : 'خادم',
+          data.assigned_stage?.trim() || null,
+        ]);
+      }
+    }
+  }
 
   return (await getUserByIdPg(id))!;
 }
@@ -207,13 +251,56 @@ export async function updateUserPg(id: string, updates: Partial<ChurchUser>): Pr
 export async function deleteUserPg(id: string): Promise<boolean> {
   const user = await getUserByIdPg(id);
   if (!user) return false;
-  if (user.id === 'usr-admin' || user.phone === '01202074649') {
+  const cleanPhone = normalizePhone(user.phone);
+  if (user.id === 'usr-admin' || user.phone === '01202074649' || cleanPhone === '01202074649') {
     throw new Error('لا يمكن حذف حساب إدارة المنظومة الأساسي.');
   }
 
-  await queryPg(`DELETE FROM servants WHERE user_id = $1 OR phone = $2`, [id, user.phone]);
-  await queryPg(`DELETE FROM users WHERE id = $1`, [id]);
-  return true;
+  const pool = getPgPool()!;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Find all servant records linked to this user or phone
+    const sRows = (await client.query(
+      `SELECT id FROM servants WHERE user_id = $1 OR phone = $2 OR phone = $3`,
+      [id, user.phone, cleanPhone]
+    )).rows;
+
+    for (const s of sRows) {
+      await client.query(`UPDATE served_members SET assigned_servant_id = NULL WHERE assigned_servant_id = $1`, [s.id]);
+      await client.query(`UPDATE families SET leader_id = NULL WHERE leader_id = $1`, [s.id]);
+      await client.query(`UPDATE absence_alerts SET assigned_servant_id = NULL WHERE assigned_servant_id = $1`, [s.id]);
+      await client.query(`UPDATE member_academic_history SET servant_id = NULL WHERE servant_id = $1`, [s.id]);
+      await client.query(`DELETE FROM family_servants WHERE servant_id = $1`, [s.id]);
+      await client.query(`DELETE FROM servant_attendance WHERE servant_id = $1`, [s.id]);
+      await client.query(`DELETE FROM followup_tasks WHERE servant_id = $1`, [s.id]);
+      await client.query(`DELETE FROM servant_academic_assignments WHERE servant_id = $1`, [s.id]);
+      await client.query(`DELETE FROM servants WHERE id = $1`, [s.id]);
+    }
+
+    // 2. Also ensure any lingering servants with this user_id or phone are removed
+    await client.query(`DELETE FROM servants WHERE user_id = $1 OR phone = $2 OR phone = $3`, [id, user.phone, cleanPhone]);
+
+    // 3. Delete from join_requests
+    await client.query(`DELETE FROM join_requests WHERE phone = $1 OR phone = $2`, [user.phone, cleanPhone]);
+
+    // 4. Delete user account from users table
+    await client.query(`
+      DELETE FROM users 
+      WHERE (id = $1 OR phone = $2 OR phone = $3)
+      AND id != 'usr-admin'
+      AND phone != '01202074649'
+    `, [id, user.phone, cleanPhone]);
+
+    await client.query('COMMIT');
+    return true;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function changeUserPasswordPg(userId: string, currentPass: string, newPass: string): Promise<boolean> {
@@ -779,22 +866,59 @@ export async function createServantPg(data: {
   job_or_study?: string;
   notes?: string;
 }): Promise<Servant> {
+  const rawPhone = data.phone.trim();
+  const cleanPhone = normalizePhone(rawPhone) || rawPhone;
+  const targetFamilyId = data.family_id || (Array.isArray((data as any).family_ids) ? (data as any).family_ids[0] : undefined);
+
+  // 1. Ensure user account exists in users table so servant can log in
+  let userId: string;
+  const existingUser = await queryOnePg(
+    `SELECT id FROM users WHERE phone = $1 OR phone = $2`,
+    [rawPhone, cleanPhone]
+  );
+
+  if (existingUser) {
+    userId = existingUser.id;
+    await queryPg(
+      `UPDATE users SET assigned_family_id = COALESCE($1, assigned_family_id), assigned_stage = COALESCE($2, assigned_stage) WHERE id = $3`,
+      [targetFamilyId || null, data.assigned_stage?.trim() || null, userId]
+    );
+  } else {
+    userId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const defaultHash = await hashPassword('George-O229');
+    await queryPg(`
+      INSERT INTO users (id, email, full_name, phone, role, assigned_family_id, assigned_stage, confession_father, password_hash, is_active)
+      VALUES ($1, $2, $3, $4, 'servant', $5, $6, $7, $8, true)
+    `, [
+      userId,
+      `${cleanPhone}@organa.eg`,
+      data.full_name.trim(),
+      cleanPhone,
+      targetFamilyId || null,
+      data.assigned_stage?.trim() || null,
+      data.confession_father?.trim() || null,
+      defaultHash,
+    ]);
+  }
+
+  // 2. Insert into servants table with user_id linked
   const id = `srv-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   await queryPg(`
-    INSERT INTO servants (id, full_name, phone, national_id, confession_father, job_or_study, joining_date, is_active, notes, assigned_stage)
-    VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE, true, $7, $8)
+    INSERT INTO servants (id, full_name, phone, national_id, confession_father, job_or_study, joining_date, is_active, notes, assigned_stage, user_id)
+    VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE, true, $7, $8, $9)
   `, [
     id,
     data.full_name.trim(),
-    data.phone.trim(),
+    cleanPhone,
     data.national_id?.trim() || null,
     data.confession_father?.trim() || null,
     data.job_or_study?.trim() || null,
     data.notes?.trim() || null,
     data.assigned_stage?.trim() || null,
+    userId,
   ]);
 
-  const targetFamilyId = data.family_id || (Array.isArray((data as any).family_ids) ? (data as any).family_ids[0] : undefined);
+  // 3. Assign to family
   if (targetFamilyId) {
     const fsId = `fs-${targetFamilyId}-${id}`;
     await queryPg(`
@@ -802,10 +926,6 @@ export async function createServantPg(data: {
       VALUES ($1, $2, $3, 'ay-2026-2027', $4, $5)
       ON CONFLICT (id) DO UPDATE SET family_id = EXCLUDED.family_id, stage = EXCLUDED.stage
     `, [fsId, targetFamilyId, id, data.role_in_family?.trim() || 'خادم', data.assigned_stage?.trim() || null]);
-
-    await queryPg(`
-      UPDATE users SET assigned_family_id = $1, assigned_stage = $2 WHERE phone = $3
-    `, [targetFamilyId, data.assigned_stage?.trim() || null, data.phone.trim()]);
   }
 
   const all = await getServantsPg();
@@ -817,6 +937,20 @@ export async function createServantPg(data: {
 
 export async function updateServantPg(id: string, data: Partial<Servant> & { family_id?: string; family_ids?: string[]; role_in_family?: string; assigned_stage?: string }): Promise<Servant> {
   const oldServant = await queryOnePg(`SELECT * FROM servants WHERE id = $1`, [id]);
+  const newRawPhone = data.phone ? data.phone.trim() : null;
+  const newCleanPhone = newRawPhone ? (normalizePhone(newRawPhone) || newRawPhone) : null;
+
+  // Resolve user_id if null
+  let userId = oldServant?.user_id;
+  if (!userId && (oldServant?.phone || newCleanPhone)) {
+    const matchedUser = await queryOnePg(
+      `SELECT id FROM users WHERE phone = $1 OR phone = $2 OR phone = $3`,
+      [oldServant?.phone || '', newRawPhone || '', newCleanPhone || '']
+    );
+    if (matchedUser) {
+      userId = matchedUser.id;
+    }
+  }
 
   await queryPg(`
     UPDATE servants
@@ -828,17 +962,19 @@ export async function updateServantPg(id: string, data: Partial<Servant> & { fam
         notes = CASE WHEN $6::text IS NOT NULL THEN $6 ELSE notes END,
         is_active = COALESCE($7, is_active),
         assigned_stage = CASE WHEN $8::text IS NOT NULL THEN $8 ELSE assigned_stage END,
+        user_id = COALESCE($9, user_id),
         updated_at = now()
-    WHERE id = $9
+    WHERE id = $10
   `, [
     data.full_name ?? null,
-    data.phone ?? null,
+    newCleanPhone || newRawPhone || null,
     data.confession_father !== undefined ? data.confession_father : null,
     data.job_or_study !== undefined ? data.job_or_study : null,
     data.national_id !== undefined ? data.national_id : null,
     data.notes !== undefined ? data.notes : null,
     data.is_active !== undefined ? data.is_active : null,
     data.assigned_stage !== undefined ? data.assigned_stage : null,
+    userId || null,
     id,
   ]);
 
@@ -854,11 +990,11 @@ export async function updateServantPg(id: string, data: Partial<Servant> & { fam
     WHERE id = $6 OR phone = $7 OR (phone = $2 AND $2 IS NOT NULL)
   `, [
     data.full_name ?? null,
-    data.phone ?? null,
+    newCleanPhone || newRawPhone || null,
     data.confession_father !== undefined ? data.confession_father : null,
     data.is_active !== undefined ? data.is_active : null,
     data.assigned_stage !== undefined ? data.assigned_stage : null,
-    oldServant?.user_id || null,
+    userId || null,
     oldServant?.phone || null,
   ]);
 
@@ -878,7 +1014,7 @@ export async function updateServantPg(id: string, data: Partial<Servant> & { fam
       UPDATE users
       SET assigned_family_id = $1
       WHERE id = $2 OR phone = $3
-    `, [targetFamilyId, oldServant?.user_id || null, oldServant?.phone || null]);
+    `, [targetFamilyId, userId || oldServant?.user_id || null, newCleanPhone || oldServant?.phone || null]);
   } else if (data.assigned_stage) {
     await queryPg(`UPDATE family_servants SET stage = $1 WHERE servant_id = $2`, [data.assigned_stage, id]);
   }
@@ -895,16 +1031,60 @@ export async function deleteServantPg(id: string): Promise<boolean> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query(`DELETE FROM family_servants WHERE servant_id = $1`, [id]);
-    await client.query(`DELETE FROM servant_attendance WHERE servant_id = $1`, [id]);
-    await client.query(`DELETE FROM followup_tasks WHERE servant_id = $1`, [id]);
-    await client.query(`UPDATE served_members SET assigned_servant_id = NULL WHERE assigned_servant_id = $1`, [id]);
-    await client.query(`UPDATE families SET leader_id = NULL WHERE leader_id = $1`, [id]);
-    const servant = (await client.query(`SELECT user_id, phone FROM servants WHERE id = $1`, [id])).rows[0];
-    if (servant?.user_id && servant.user_id !== 'usr-admin') {
-      await client.query(`DELETE FROM users WHERE id = $1`, [servant.user_id]);
+
+    // 1. Locate servant by id, user_id, or phone
+    const servantRes = await client.query(
+      `SELECT id, user_id, phone, full_name FROM servants WHERE id = $1 OR user_id = $1 OR phone = $1`,
+      [id]
+    );
+    const servant = servantRes.rows[0];
+
+    const servantId = servant?.id || id;
+    const userId = servant?.user_id;
+    const rawPhone = servant?.phone;
+    const cleanPhone = rawPhone ? normalizePhone(rawPhone) : '';
+
+    // Safety check: Never delete primary admin
+    if (userId === 'usr-admin' || rawPhone === '01202074649' || cleanPhone === '01202074649') {
+      throw new Error('لا يمكن حذف حساب إدارة المنظومة الأساسي.');
     }
-    await client.query(`DELETE FROM servants WHERE id = $1`, [id]);
+
+    // 2. Clear FK references pointing to servants
+    await client.query(`UPDATE served_members SET assigned_servant_id = NULL WHERE assigned_servant_id = $1`, [servantId]);
+    await client.query(`UPDATE families SET leader_id = NULL WHERE leader_id = $1`, [servantId]);
+    await client.query(`UPDATE absence_alerts SET assigned_servant_id = NULL WHERE assigned_servant_id = $1`, [servantId]);
+    await client.query(`UPDATE member_academic_history SET servant_id = NULL WHERE servant_id = $1`, [servantId]);
+    await client.query(`DELETE FROM family_servants WHERE servant_id = $1`, [servantId]);
+    await client.query(`DELETE FROM servant_attendance WHERE servant_id = $1`, [servantId]);
+    await client.query(`DELETE FROM followup_tasks WHERE servant_id = $1`, [servantId]);
+    await client.query(`DELETE FROM servant_academic_assignments WHERE servant_id = $1`, [servantId]);
+
+    // 3. Delete from servants table
+    await client.query(`DELETE FROM servants WHERE id = $1`, [servantId]);
+    if (rawPhone) {
+      await client.query(`DELETE FROM servants WHERE phone = $1 OR phone = $2`, [rawPhone, cleanPhone]);
+    }
+
+    // 4. Delete login credentials from users table (by user_id AND by phone)
+    await client.query(`
+      DELETE FROM users 
+      WHERE (
+        (id = $1 AND $1 IS NOT NULL AND $1 != '')
+        OR (phone = $2 AND $2 IS NOT NULL AND $2 != '')
+        OR (phone = $3 AND $3 IS NOT NULL AND $3 != '')
+      )
+      AND id != 'usr-admin' 
+      AND phone != '01202074649'
+    `, [userId || null, rawPhone || null, cleanPhone || null]);
+
+    // 5. Delete any matching join_requests so they cannot re-enter or cause ghost states
+    if (rawPhone || cleanPhone) {
+      await client.query(`
+        DELETE FROM join_requests 
+        WHERE phone = $1 OR phone = $2
+      `, [rawPhone || null, cleanPhone || null]);
+    }
+
     await client.query('COMMIT');
     return true;
   } catch (err) {

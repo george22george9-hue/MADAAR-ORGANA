@@ -47,6 +47,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setCurrentRole(parsed.role);
             setCurrentUser(parsed);
             setIsAuthenticated(true);
+
+            // Fast background verification with server
+            if (parsed.id !== 'usr-admin') {
+              fetch('/api/auth/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: parsed.id, phone: parsed.phone }),
+              })
+                .then((r) => r.json())
+                .then((data) => {
+                  if (data && data.valid === false) {
+                    // Evict deleted or disabled user immediately
+                    localStorage.removeItem('organa_role');
+                    localStorage.removeItem('organa_user');
+                    setIsAuthenticated(false);
+                    setCurrentRole('servant');
+                    setCurrentUser(INITIAL_PERSONAS.servant);
+                    if (window.location.pathname !== '/login') {
+                      window.location.href = '/login?evicted=1';
+                    }
+                  }
+                })
+                .catch(() => {});
+            }
           } else {
             setIsAuthenticated(false);
           }

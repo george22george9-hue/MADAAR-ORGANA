@@ -61,6 +61,13 @@ export default function LoginPage() {
 
   // Redirect if already logged in
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('evicted') === '1') {
+        setFormError('تم إلغاء تنشيط أو حذف هذا الحساب من المنظومة من قبل الإدارة.');
+        return;
+      }
+    }
     if (!isLoadingAuth && isAuthenticated) {
       router.replace('/dashboard');
     }

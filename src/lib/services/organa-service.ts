@@ -255,8 +255,19 @@ export function deleteUser(id: string, actor: ChurchUser): boolean {
     throw new Error('لا يمكن حذف حساب إدارة المنظومة الأساسي.');
   }
   const transaction = db.transaction(() => {
+    // Find all servants associated with this user id or phone
+    const servants = db.prepare('SELECT id FROM servants WHERE user_id = ? OR phone = ?').all(id, user.phone) as any[];
+    for (const s of servants) {
+      db.prepare('DELETE FROM family_servants WHERE servant_id = ?').run(s.id);
+      db.prepare('DELETE FROM servant_attendance WHERE servant_id = ?').run(s.id);
+      db.prepare('DELETE FROM followup_tasks WHERE servant_id = ?').run(s.id);
+      db.prepare('UPDATE served_members SET assigned_servant_id = NULL WHERE assigned_servant_id = ?').run(s.id);
+      db.prepare('UPDATE families SET leader_id = NULL WHERE leader_id = ?').run(s.id);
+      db.prepare('DELETE FROM servants WHERE id = ?').run(s.id);
+    }
     db.prepare('DELETE FROM servants WHERE user_id = ? OR phone = ?').run(id, user.phone);
-    db.prepare('DELETE FROM users WHERE id = ?').run(id);
+    db.prepare('DELETE FROM join_requests WHERE phone = ?').run(user.phone);
+    db.prepare('DELETE FROM users WHERE id = ? OR phone = ?').run(id, user.phone);
   });
   transaction();
   logAuditAction(actor.id, actor.full_name, actor.role, 'DELETE_USER', 'users', id, `حذف المستخدم: ${user.full_name}`);
@@ -764,16 +775,23 @@ export function updateServant(id: string, data: Partial<Servant> & { family_ids?
 export function deleteServant(id: string, actor: ChurchUser): boolean {
   const current = getServantById(id);
   if (!current) return false;
+  if (current.user_id === 'usr-admin' || current.phone === '01202074649') {
+    throw new Error('لا يمكن حذف حساب إدارة المنظومة الأساسي.');
+  }
   const transaction = db.transaction(() => {
     db.prepare('DELETE FROM family_servants WHERE servant_id = ?').run(id);
     db.prepare('DELETE FROM servant_attendance WHERE servant_id = ?').run(id);
     db.prepare('DELETE FROM followup_tasks WHERE servant_id = ?').run(id);
     db.prepare('UPDATE served_members SET assigned_servant_id = NULL WHERE assigned_servant_id = ?').run(id);
     db.prepare('UPDATE families SET leader_id = NULL WHERE leader_id = ?').run(id);
+    db.prepare('DELETE FROM servants WHERE id = ?').run(id);
     if (current.user_id && current.user_id !== 'usr-admin') {
       db.prepare('DELETE FROM users WHERE id = ?').run(current.user_id);
     }
-    db.prepare('DELETE FROM servants WHERE id = ?').run(id);
+    if (current.phone && current.phone !== '01202074649') {
+      db.prepare("DELETE FROM users WHERE phone = ? AND id != 'usr-admin'").run(current.phone);
+      db.prepare('DELETE FROM join_requests WHERE phone = ?').run(current.phone);
+    }
   });
   transaction();
   logAuditAction(actor.id, actor.full_name, actor.role, 'DELETE_SERVANT', 'servants', id, `حذف الخادم: ${current.full_name}`);

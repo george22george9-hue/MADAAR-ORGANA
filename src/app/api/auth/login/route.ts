@@ -9,6 +9,7 @@ import { isNeonConfigured } from '@/lib/services/neon-service';
 import { getUsers, getJoinRequests } from '@/lib/services/organa-service';
 import { verifyPassword } from '@/lib/auth/password';
 import { queryOnePg } from '@/lib/db/neon';
+import { normalizePhone } from '@/lib/utils/phone';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,14 +27,15 @@ export async function POST(request: NextRequest) {
     }
 
     let user: any = null;
+    const cleanTerm = normalizePhone(term);
 
     if (isNeonConfigured()) {
       user = await queryOnePg(
-        `SELECT * FROM users WHERE phone = $1 OR LOWER(email) = LOWER($1)`,
-        [term]
+        `SELECT * FROM users WHERE phone = $1 OR phone = $2 OR LOWER(email) = LOWER($1)`,
+        [term, cleanTerm || term]
       );
     } else {
-      user = getUsers().find(u => u.phone === term || (u.email && u.email.toLowerCase() === term.toLowerCase()));
+      user = getUsers().find(u => u.phone === term || u.phone === cleanTerm || (u.email && u.email.toLowerCase() === term.toLowerCase()));
     }
 
     if (user) {
@@ -64,12 +66,12 @@ export async function POST(request: NextRequest) {
     let joinReq: any = null;
     if (isNeonConfigured()) {
       joinReq = await queryOnePg(
-        `SELECT * FROM join_requests WHERE phone = $1 ORDER BY created_at DESC LIMIT 1`,
-        [term]
+        `SELECT * FROM join_requests WHERE phone = $1 OR phone = $2 ORDER BY created_at DESC LIMIT 1`,
+        [term, cleanTerm || term]
       );
     } else {
       const allReqs = getJoinRequests();
-      joinReq = allReqs.find(r => r.phone === term);
+      joinReq = allReqs.find(r => r.phone === term || r.phone === cleanTerm);
     }
 
     if (joinReq) {
