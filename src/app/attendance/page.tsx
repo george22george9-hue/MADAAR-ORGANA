@@ -1107,22 +1107,6 @@ function AttendanceContent() {
             >
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
-
-            {/* View Mode Toggle */}
-            {activeTab === 'members' && (
-              <button
-                type="button"
-                onClick={() => setViewMode(v => v === 'compact' ? 'detailed' : 'compact')}
-                className={`p-2 rounded-xl border text-xs font-bold transition-all shrink-0 ${
-                  viewMode === 'detailed'
-                    ? 'bg-[#702C3B] text-white border-[#702C3B]'
-                    : 'bg-[#FAF5F6] text-[#421923] border-[#EAE3E4] hover:bg-white'
-                }`}
-                title={viewMode === 'compact' ? 'التبديل إلى كشف مفصل' : 'التبديل إلى نداء سريع'}
-              >
-                {viewMode === 'compact' ? <Sparkles className="w-3.5 h-3.5" /> : <Zap className="w-3.5 h-3.5" />}
-              </button>
-            )}
           </div>
 
           {/* Active Status Filter Indicator (if filtered) */}
@@ -1198,101 +1182,7 @@ function AttendanceContent() {
                 const isUnrecorded = !m.status || m.status === 'not_recorded';
 
                 // ==========================================
-                // COMPACT ROLL-CALL ROW (نداء سريع فائق السرعة)
-                // ==========================================
-                if (viewMode === 'compact') {
-                  return (
-                    <div
-                      key={m.member_id}
-                      className={`bg-white rounded-2xl border p-2.5 shadow-2xs transition-all flex items-center justify-between gap-2 ${
-                        isPresent
-                          ? 'border-emerald-200 bg-emerald-50/20'
-                          : isAbsent
-                          ? 'border-rose-200 bg-rose-50/20'
-                          : isExcused
-                          ? 'border-amber-200 bg-amber-50/20'
-                          : 'border-[#EAE3E4]'
-                      }`}
-                    >
-                      {/* Member Info */}
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-700 text-[10px] font-mono font-bold border border-gray-200 shrink-0">
-                          {m.code ? (m.code.includes('-') ? m.code.split('-')[1] : m.code) : '—'}
-                        </span>
-                        <div className="min-w-0">
-                          <h4 className="font-bold text-xs sm:text-sm text-[#282326] truncate">
-                            {m.member_name}
-                          </h4>
-                          <div className="flex items-center gap-1.5 text-[10px] text-[#81777A] mt-0.5">
-                            {m.stage && (
-                              <span className="font-semibold">{m.stage}</span>
-                            )}
-                            {m.address && (
-                              <>
-                                <span>•</span>
-                                <span>{m.address}</span>
-                              </>
-                            )}
-                            {isExcused && m.excuse_reason && (
-                              <>
-                                <span>•</span>
-                                <span className="text-amber-800 font-bold bg-amber-100 px-1 rounded">{m.excuse_reason}</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Rapid One-Touch 3-Button Status Selector */}
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleMemberStatusChange(m.member_id, 'present')}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
-                            isPresent
-                              ? 'bg-emerald-600 text-white shadow-xs scale-102 ring-2 ring-emerald-300'
-                              : 'bg-gray-100 text-gray-600 hover:bg-emerald-50 hover:text-emerald-700'
-                          }`}
-                          title="حاضر"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>حاضر</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleMemberStatusChange(m.member_id, 'absent')}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
-                            isAbsent
-                              ? 'bg-rose-600 text-white shadow-xs scale-102 ring-2 ring-rose-300'
-                              : 'bg-gray-100 text-gray-600 hover:bg-rose-50 hover:text-rose-700'
-                          }`}
-                          title="غائب"
-                        >
-                          <XCircle className="w-3.5 h-3.5" />
-                          <span>غائب</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleMemberStatusChange(m.member_id, 'excused')}
-                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
-                            isExcused
-                              ? 'bg-amber-600 text-white shadow-xs scale-102 ring-2 ring-amber-300'
-                              : 'bg-gray-100 text-gray-600 hover:bg-amber-50 hover:text-amber-700'
-                          }`}
-                          title="معتذر"
-                        >
-                          <HelpCircle className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">معتذر</span>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                }
-
-                // ==========================================
-                // DETAILED SPIRITUAL CARD (كشف المتابعة الروحية المفصل)
+                // DETAILED SPIRITUAL CARD (كشف المتابعة الروحية المفصل الافتراضي)
                 // ==========================================
                 return (
                   <div

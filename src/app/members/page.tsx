@@ -574,6 +574,56 @@ export default function MembersPage() {
                   </div>
                 </div>
 
+                {/* Live Attendance Progress & Spiritual Followup */}
+                <div className="bg-[#FAF5F6] p-2.5 rounded-xl border border-[#EAE3E4] my-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-[#421923] flex items-center gap-1">
+                      <span>نسبة الحضور:</span>
+                      <span className={`font-extrabold ${
+                        (m.attendance_rate || 0) >= 75 ? 'text-emerald-700' :
+                        (m.attendance_rate || 0) >= 50 ? 'text-amber-700' : 'text-rose-700'
+                      }`}>
+                        {m.attendance_rate || 0}%
+                      </span>
+                    </span>
+                    <span className="text-[10px] text-[#81777A]">
+                      ({m.present_count || m.total_attendances || 0} حضور من {m.total_recorded || 0} لقاء)
+                    </span>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="w-full bg-gray-200 h-1.5 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        (m.attendance_rate || 0) >= 75 ? 'bg-emerald-600' :
+                        (m.attendance_rate || 0) >= 50 ? 'bg-amber-500' : 'bg-rose-500'
+                      }`}
+                      style={{ width: `${Math.min(100, m.attendance_rate || 0)}%` }}
+                    />
+                  </div>
+
+                  {/* Quick Spiritual Metrics Pills */}
+                  <div className="flex items-center justify-between text-[10px] text-[#81777A] pt-1">
+                    <span className="flex items-center gap-0.5">
+                      <span>⛪ قداس:</span>
+                      <strong className="text-[#421923]">{m.liturgy_count || 0}</strong>
+                    </span>
+                    <span className="flex items-center gap-0.5">
+                      <span>🍷 تناول:</span>
+                      <strong className="text-[#421923]">{m.communion_count || 0}</strong>
+                    </span>
+                    <span className="flex items-center gap-0.5">
+                      <span>✝️ اعتراف:</span>
+                      <strong className="text-[#702C3B]">{m.confession_count || 0}</strong>
+                    </span>
+                    {m.last_attendance_date && (
+                      <span className="text-[9px] text-gray-500">
+                        آخر حضور: {String(m.last_attendance_date).split('T')[0]}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
                 <div className="text-xs text-[#81777A] space-y-1.5 my-3 pb-3 border-b border-[#EAE3E4]">
                   <div className="flex items-center justify-between">
                     <span>الخادم المسؤول:</span>
@@ -764,6 +814,54 @@ export default function MembersPage() {
                       <span className="text-[#81777A] block">هاتف ولي الأمر:</span>
                       <span className="font-semibold text-[#702C3B]">{viewingMember.guardian_phone}</span>
                     </div>
+                  </div>
+
+                  {/* Live Attendance & Spiritual Stats Breakdown */}
+                  <div className="p-3 bg-[#FAF5F6] rounded-xl border border-[#EAE3E4] space-y-2">
+                    <div className="flex items-center justify-between font-bold text-xs">
+                      <span className="text-[#421923]">سجل الانضباط ونسبة الحضور:</span>
+                      <span className={`text-sm ${
+                        (viewingMember.attendance_rate || 0) >= 75 ? 'text-emerald-700 font-extrabold' :
+                        (viewingMember.attendance_rate || 0) >= 50 ? 'text-amber-700 font-bold' : 'text-rose-700 font-bold'
+                      }`}>
+                        {viewingMember.attendance_rate || 0}%
+                      </span>
+                    </div>
+
+                    <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          (viewingMember.attendance_rate || 0) >= 75 ? 'bg-emerald-600' :
+                          (viewingMember.attendance_rate || 0) >= 50 ? 'bg-amber-500' : 'bg-rose-500'
+                        }`}
+                        style={{ width: `${Math.min(100, viewingMember.attendance_rate || 0)}%` }}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-2 text-center pt-1 text-[11px]">
+                      <div className="bg-white p-1.5 rounded-lg border border-[#EAE3E4]">
+                        <span className="text-gray-500 block text-[10px]">حضور</span>
+                        <strong className="text-emerald-700 text-xs">{viewingMember.present_count || viewingMember.total_attendances || 0}</strong>
+                      </div>
+                      <div className="bg-white p-1.5 rounded-lg border border-[#EAE3E4]">
+                        <span className="text-gray-500 block text-[10px]">غياب</span>
+                        <strong className="text-rose-700 text-xs">{viewingMember.absent_count || 0}</strong>
+                      </div>
+                      <div className="bg-white p-1.5 rounded-lg border border-[#EAE3E4]">
+                        <span className="text-gray-500 block text-[10px]">قداس</span>
+                        <strong className="text-[#421923] text-xs">{viewingMember.liturgy_count || 0}</strong>
+                      </div>
+                      <div className="bg-white p-1.5 rounded-lg border border-[#EAE3E4]">
+                        <span className="text-gray-500 block text-[10px]">تناول</span>
+                        <strong className="text-purple-700 text-xs">{viewingMember.communion_count || 0}</strong>
+                      </div>
+                    </div>
+
+                    {viewingMember.last_attendance_date && (
+                      <div className="text-[10px] text-gray-500 text-center pt-0.5">
+                        آخر حضور مسجل: {String(viewingMember.last_attendance_date).split('T')[0]} ({viewingMember.last_attendance_status === 'present' ? 'حاضر ✓' : viewingMember.last_attendance_status || 'مسجل'})
+                      </div>
+                    )}
                   </div>
 
                   <div className="p-3 bg-white rounded-xl border border-[#EAE3E4]">

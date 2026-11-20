@@ -973,6 +973,14 @@ export async function createServantPg(data: {
     `, [fsId, targetFamilyId, id, data.role_in_family?.trim() || 'خادم', data.assigned_stage?.trim() || null]);
   }
 
+  // 4. Always assign to general servants group (fam-servants) for اجتماع الخدام
+  const fsServantsId = `fs-fam-servants-${id}`;
+  await queryPg(`
+    INSERT INTO family_servants (id, family_id, servant_id, academic_year_id, role_in_family, stage)
+    VALUES ($1, 'fam-servants', $2, 'ay-2026-2027', 'خادم', $3)
+    ON CONFLICT (id) DO NOTHING
+  `, [fsServantsId, id, data.assigned_stage?.trim() || null]);
+
   const all = await getServantsPg();
   const found = all.find(s => s.id === id);
   if (found) return found;
@@ -1145,10 +1153,46 @@ export async function deleteServantPg(id: string): Promise<boolean> {
 // --------------------------------------------------------------------
 export async function getServedMembersPg(familyId?: string, search?: string): Promise<ServedMember[]> {
   let sql = `
-    SELECT m.*, f.name as family_name, s.full_name as assigned_servant_name
+    SELECT m.*, f.name as family_name, s.full_name as assigned_servant_name,
+      COALESCE(att.total_recorded, 0) as total_recorded,
+      COALESCE(att.present_count, 0) as present_count,
+      COALESCE(att.absent_count, 0) as absent_count,
+      COALESCE(att.excused_count, 0) as excused_count,
+      COALESCE(att.liturgy_count, 0) as liturgy_count,
+      COALESCE(att.communion_count, 0) as communion_count,
+      COALESCE(att.confession_count, 0) as confession_count,
+      CASE 
+        WHEN COALESCE(att.total_recorded, 0) > 0 
+        THEN ROUND((att.present_count::numeric / att.total_recorded) * 100)
+        ELSE 100
+      END as attendance_rate,
+      att.last_attendance_date,
+      att.last_attendance_status
     FROM served_members m
     LEFT JOIN families f ON m.current_family_id = f.id
     LEFT JOIN servants s ON m.assigned_servant_id = s.id
+    LEFT JOIN LATERAL (
+      SELECT 
+        COUNT(*) as total_recorded,
+        COUNT(CASE WHEN ma.status = 'present' THEN 1 END) as present_count,
+        COUNT(CASE WHEN ma.status = 'absent' THEN 1 END) as absent_count,
+        COUNT(CASE WHEN ma.status = 'excused' THEN 1 END) as excused_count,
+        COUNT(CASE WHEN ma.attended_liturgy = 1 THEN 1 END) as liturgy_count,
+        COUNT(CASE WHEN ma.attended_communion = 1 THEN 1 END) as communion_count,
+        COUNT(CASE WHEN ma.attended_confession = 1 THEN 1 END) as confession_count,
+        MAX(m2.date) as last_attendance_date,
+        (
+          SELECT ma2.status 
+          FROM meeting_attendance ma2 
+          JOIN meetings m3 ON ma2.meeting_id = m3.id 
+          WHERE ma2.member_id = m.id 
+          ORDER BY m3.date DESC 
+          LIMIT 1
+        ) as last_attendance_status
+      FROM meeting_attendance ma
+      JOIN meetings m2 ON ma.meeting_id = m2.id
+      WHERE ma.member_id = m.id
+    ) att ON true
     WHERE 1=1
   `;
   const params: any[] = [];
@@ -1170,15 +1214,62 @@ export async function getServedMembersPg(familyId?: string, search?: string): Pr
     family_name: r.family_name || 'غير محدد',
     assigned_servant_name: r.assigned_servant_name || 'غير معين',
     birth_date: r.birth_date instanceof Date ? r.birth_date.toISOString().split('T')[0] : String(r.birth_date || '').split('T')[0],
+    attendance_rate: Number(r.attendance_rate || 100),
+    total_attendances: Number(r.present_count || 0),
+    present_count: Number(r.present_count || 0),
+    absent_count: Number(r.absent_count || 0),
+    excused_count: Number(r.excused_count || 0),
+    total_recorded: Number(r.total_recorded || 0),
+    liturgy_count: Number(r.liturgy_count || 0),
+    communion_count: Number(r.communion_count || 0),
+    confession_count: Number(r.confession_count || 0),
+    last_attendance_date: r.last_attendance_date instanceof Date ? r.last_attendance_date.toISOString().split('T')[0] : (r.last_attendance_date ? String(r.last_attendance_date).split('T')[0] : null),
+    last_attendance_status: r.last_attendance_status || null,
   }));
 }
 
 export async function getMemberByIdPg(id: string): Promise<ServedMember | null> {
   const row = await queryOnePg(`
-    SELECT m.*, f.name as family_name, s.full_name as assigned_servant_name
+    SELECT m.*, f.name as family_name, s.full_name as assigned_servant_name,
+      COALESCE(att.total_recorded, 0) as total_recorded,
+      COALESCE(att.present_count, 0) as present_count,
+      COALESCE(att.absent_count, 0) as absent_count,
+      COALESCE(att.excused_count, 0) as excused_count,
+      COALESCE(att.liturgy_count, 0) as liturgy_count,
+      COALESCE(att.communion_count, 0) as communion_count,
+      COALESCE(att.confession_count, 0) as confession_count,
+      CASE 
+        WHEN COALESCE(att.total_recorded, 0) > 0 
+        THEN ROUND((att.present_count::numeric / att.total_recorded) * 100)
+        ELSE 100
+      END as attendance_rate,
+      att.last_attendance_date,
+      att.last_attendance_status
     FROM served_members m
     LEFT JOIN families f ON m.current_family_id = f.id
     LEFT JOIN servants s ON m.assigned_servant_id = s.id
+    LEFT JOIN LATERAL (
+      SELECT 
+        COUNT(*) as total_recorded,
+        COUNT(CASE WHEN ma.status = 'present' THEN 1 END) as present_count,
+        COUNT(CASE WHEN ma.status = 'absent' THEN 1 END) as absent_count,
+        COUNT(CASE WHEN ma.status = 'excused' THEN 1 END) as excused_count,
+        COUNT(CASE WHEN ma.attended_liturgy = 1 THEN 1 END) as liturgy_count,
+        COUNT(CASE WHEN ma.attended_communion = 1 THEN 1 END) as communion_count,
+        COUNT(CASE WHEN ma.attended_confession = 1 THEN 1 END) as confession_count,
+        MAX(m2.date) as last_attendance_date,
+        (
+          SELECT ma2.status 
+          FROM meeting_attendance ma2 
+          JOIN meetings m3 ON ma2.meeting_id = m3.id 
+          WHERE ma2.member_id = m.id 
+          ORDER BY m3.date DESC 
+          LIMIT 1
+        ) as last_attendance_status
+      FROM meeting_attendance ma
+      JOIN meetings m2 ON ma.meeting_id = m2.id
+      WHERE ma.member_id = m.id
+    ) att ON true
     WHERE m.id = $1
   `, [id]);
   return row ? {
@@ -1188,6 +1279,17 @@ export async function getMemberByIdPg(id: string): Promise<ServedMember | null> 
     family_name: row.family_name || 'غير محدد',
     assigned_servant_name: row.assigned_servant_name || 'غير معين',
     birth_date: row.birth_date instanceof Date ? row.birth_date.toISOString().split('T')[0] : String(row.birth_date || '').split('T')[0],
+    attendance_rate: Number(row.attendance_rate || 100),
+    total_attendances: Number(row.present_count || 0),
+    present_count: Number(row.present_count || 0),
+    absent_count: Number(row.absent_count || 0),
+    excused_count: Number(row.excused_count || 0),
+    total_recorded: Number(row.total_recorded || 0),
+    liturgy_count: Number(row.liturgy_count || 0),
+    communion_count: Number(row.communion_count || 0),
+    confession_count: Number(row.confession_count || 0),
+    last_attendance_date: row.last_attendance_date instanceof Date ? row.last_attendance_date.toISOString().split('T')[0] : (row.last_attendance_date ? String(row.last_attendance_date).split('T')[0] : null),
+    last_attendance_status: row.last_attendance_status || null,
   } : null;
 }
 
@@ -1538,7 +1640,7 @@ export async function getMeetingAttendancePg(meetingId: string): Promise<{
   `, [meetingId, familyId]);
 
   const servants = await queryPg(`
-    SELECT 
+    SELECT DISTINCT ON (s.id)
       COALESCE(sa.id, 'satt-' || $1 || '-' || s.id) as id,
       $1 as meeting_id,
       s.id as servant_id,
@@ -1552,12 +1654,12 @@ export async function getMeetingAttendancePg(meetingId: string): Promise<{
       s.full_name as servant_name, 
       s.phone,
       s.confession_father,
-      fs.role_in_family
-    FROM family_servants fs
-    JOIN servants s ON fs.servant_id = s.id
+      COALESCE(fs.role_in_family, 'خادم') as role_in_family
+    FROM servants s
+    LEFT JOIN family_servants fs ON fs.servant_id = s.id AND (fs.family_id = $2 OR $2 = 'fam-servants')
     LEFT JOIN servant_attendance sa ON sa.meeting_id = $1 AND sa.servant_id = s.id
-    WHERE fs.family_id = $2 AND s.is_active = true
-    ORDER BY s.full_name ASC
+    WHERE ($2 = 'fam-servants' OR fs.family_id = $2) AND s.is_active = true
+    ORDER BY s.id, s.full_name ASC
   `, [meetingId, familyId]);
 
   return { members, servants };
@@ -2214,7 +2316,7 @@ export async function getDashboardDataPg(role: string = 'admin', familyId?: stri
     if (servantId) {
       pendingTasks = await queryPg(
         `SELECT * FROM followup_tasks 
-         WHERE (assigned_to = $1 OR assigned_to = (SELECT id FROM servants WHERE user_id = $1 LIMIT 1))
+         WHERE (servant_id = $1 OR servant_id = (SELECT id FROM servants WHERE user_id = $1 LIMIT 1))
            AND is_completed = false`,
         [servantId]
       );

@@ -159,6 +159,15 @@ export interface ServedMember {
   confession_warning?: boolean;
   total_attendances?: number;
   attendance_rate?: number;
+  present_count?: number;
+  absent_count?: number;
+  excused_count?: number;
+  total_recorded?: number;
+  liturgy_count?: number;
+  communion_count?: number;
+  confession_count?: number;
+  last_attendance_date?: string | null;
+  last_attendance_status?: string | null;
   created_at: string;
   updated_at: string;
 }
