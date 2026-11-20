@@ -2193,9 +2193,32 @@ export async function getDashboardDataPg(role: string = 'admin', familyId?: stri
   // For servant specific queries:
   let assignedMembers: any[] = [];
   let pendingTasks: any[] = [];
-  if (role === 'servant' && servantId) {
-    assignedMembers = await queryPg(`SELECT * FROM served_members WHERE assigned_servant_id = $1 AND is_active = true`, [servantId]);
-    pendingTasks = await queryPg(`SELECT * FROM followup_tasks WHERE assigned_to = $1 AND is_completed = false`, [servantId]);
+  if (role === 'servant') {
+    if (servantId) {
+      assignedMembers = await queryPg(
+        `SELECT * FROM served_members 
+         WHERE (assigned_servant_id = $1 OR assigned_servant_id = (SELECT id FROM servants WHERE user_id = $1 LIMIT 1))
+           AND is_active = true
+         ORDER BY full_name ASC`,
+        [servantId]
+      );
+    }
+    // If no specific members are individually assigned to this servant, show all members of their assigned family
+    if (assignedMembers.length === 0 && (familyId || 'fam-prep-boys')) {
+      const famToQuery = familyId || 'fam-prep-boys';
+      assignedMembers = await queryPg(
+        `SELECT * FROM served_members WHERE current_family_id = $1 AND is_active = true ORDER BY full_name ASC`,
+        [famToQuery]
+      );
+    }
+    if (servantId) {
+      pendingTasks = await queryPg(
+        `SELECT * FROM followup_tasks 
+         WHERE (assigned_to = $1 OR assigned_to = (SELECT id FROM servants WHERE user_id = $1 LIMIT 1))
+           AND is_completed = false`,
+        [servantId]
+      );
+    }
   }
 
   const formattedFamilyStats = familyStats.map(f => ({

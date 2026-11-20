@@ -108,18 +108,18 @@ export default function NotebooksPage() {
 
   // 1. Initial Load: Families & Reports
   useEffect(() => {
-    const famParam = isRestrictedRole && assignedFamilyId 
-      ? `&userFamilyId=${assignedFamilyId}&familyId=${assignedFamilyId}` 
+    const famParam = isRestrictedRole && (assignedFamilyId || currentUser?.assigned_family_id)
+      ? `&userFamilyId=${assignedFamilyId || currentUser?.assigned_family_id}&familyId=${assignedFamilyId || currentUser?.assigned_family_id}` 
       : '';
     Promise.all([
-      fetch(`/api/families?role=${currentRole}${famParam}`).then(r => r.json()),
-      fetch(`/api/reports?role=${currentRole}${famParam}`).then(r => r.json()),
+      fetch(`/api/families?role=${currentRole}&userId=${currentUser?.id || ''}${famParam}`).then(r => r.json()),
+      fetch(`/api/reports?role=${currentRole}&userId=${currentUser?.id || ''}${famParam}`).then(r => r.json()),
     ])
       .then(([fRes, rRes]) => {
         if (fRes.success && fRes.families) {
           setFamilies(fRes.families);
-          const initialFamId = (isRestrictedRole && assignedFamilyId) 
-            ? assignedFamilyId 
+          const initialFamId = (isRestrictedRole && (assignedFamilyId || currentUser?.assigned_family_id)) 
+            ? (assignedFamilyId || currentUser?.assigned_family_id!) 
             : (fRes.families[0]?.id || 'fam-prep-boys');
           setSelectedFamilyId(initialFamId);
         }
@@ -129,25 +129,28 @@ export default function NotebooksPage() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [currentRole, assignedFamilyId]);
+  }, [currentRole, assignedFamilyId, currentUser?.id, currentUser?.assigned_family_id]);
 
   // 2. Load Meetings when selectedFamilyId changes
   useEffect(() => {
     if (!selectedFamilyId) return;
-    const famParam = isRestrictedRole && assignedFamilyId 
-      ? `&userFamilyId=${assignedFamilyId}` 
+    const effFamId = selectedFamilyId || assignedFamilyId || currentUser?.assigned_family_id || 'fam-prep-boys';
+    const famParam = isRestrictedRole
+      ? `&userFamilyId=${effFamId}` 
       : '';
-    fetch(`/api/meetings?familyId=${selectedFamilyId}&role=${currentRole}${famParam}`)
+    fetch(`/api/meetings?familyId=${effFamId}&role=${currentRole}&userId=${currentUser?.id || ''}${famParam}`)
       .then(r => r.json())
       .then(res => {
         if (res.success && res.meetings) {
           const list: Meeting[] = res.meetings;
-          setMeetings(list);
-          if (list.length > 0) {
-            // Find the most recent meeting today or before, or fallback to the latest
+          // Sort DESC so recent Fridays appear first
+          const sorted = [...list].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          setMeetings(sorted);
+          if (sorted.length > 0) {
+            // Find meeting closest to today or earlier
             const todayStr = new Date().toISOString().split('T')[0];
-            const pastOrToday = list.filter(m => String(m.date).split('T')[0] <= todayStr);
-            const defaultMtg = pastOrToday.length > 0 ? pastOrToday[pastOrToday.length - 1] : list[0];
+            const pastOrToday = sorted.find(m => String(m.date).split('T')[0] <= todayStr);
+            const defaultMtg = pastOrToday || sorted[0];
             setSelectedMeetingId(defaultMtg.id);
           } else {
             setSelectedMeetingId('');
@@ -156,19 +159,20 @@ export default function NotebooksPage() {
         }
       })
       .catch(console.error);
-  }, [selectedFamilyId, currentRole, assignedFamilyId]);
+  }, [selectedFamilyId, currentRole, assignedFamilyId, currentUser?.id, currentUser?.assigned_family_id]);
 
   // 3. Load Meeting Attendance & Report Details when selectedMeetingId changes
   useEffect(() => {
     if (!selectedMeetingId) return;
     setDetailsLoading(true);
-    const famParam = isRestrictedRole && assignedFamilyId 
-      ? `&userFamilyId=${assignedFamilyId}` 
+    const effFamId = selectedFamilyId || assignedFamilyId || currentUser?.assigned_family_id || 'fam-prep-boys';
+    const famParam = isRestrictedRole
+      ? `&userFamilyId=${effFamId}` 
       : '';
 
     Promise.all([
-      fetch(`/api/meetings/${selectedMeetingId}/attendance?role=${currentRole}${famParam}`).then(r => r.json()),
-      fetch(`/api/reports?meetingId=${selectedMeetingId}&role=${currentRole}${famParam}`).then(r => r.json()),
+      fetch(`/api/meetings/${selectedMeetingId}/attendance?role=${currentRole}&userId=${currentUser?.id || ''}${famParam}`).then(r => r.json()),
+      fetch(`/api/reports?meetingId=${selectedMeetingId}&role=${currentRole}&userId=${currentUser?.id || ''}${famParam}`).then(r => r.json()),
     ])
       .then(([attRes, repRes]) => {
         if (attRes.success) {

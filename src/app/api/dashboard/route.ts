@@ -23,8 +23,8 @@ export async function GET(request: NextRequest) {
     if (auth.user) {
       if (auth.user.role === 'servant' || auth.user.role === 'family_leader') {
         role = auth.user.role;
-        familyId = auth.user.assigned_family_id || undefined;
-        servantId = auth.user.id;
+        familyId = auth.user.assigned_family_id || searchParams.get('familyId') || searchParams.get('userFamilyId') || undefined;
+        servantId = auth.user.id || searchParams.get('servantId') || undefined;
       }
     }
 

@@ -29,6 +29,9 @@ export async function authenticateRequest(request: NextRequest): Promise<AuthRes
   const { searchParams } = new URL(request.url);
   const queryUserId = searchParams.get('userId') || searchParams.get('user_id');
   const queryRole = searchParams.get('role') as UserRole | null;
+  const headerFamilyId = request.headers.get('x-user-family-id');
+  const queryFamilyId = searchParams.get('userFamilyId') || searchParams.get('familyId');
+  const effectiveFamilyId = headerFamilyId || queryFamilyId || null;
 
   const targetUserId = headerUserId || queryUserId;
   const targetRole = (headerRole || queryRole || 'priest') as UserRole;
@@ -37,8 +40,15 @@ export async function authenticateRequest(request: NextRequest): Promise<AuthRes
   if (targetUserId && isNeonConfigured()) {
     try {
       const dbUser = await queryOnePg(
-        `SELECT id, email, full_name, phone, role, is_active, assigned_family_id, assigned_stage, confession_father
-         FROM users WHERE id = $1`,
+        `SELECT u.id, u.email, u.full_name, u.phone, u.role, u.is_active, 
+                COALESCE(u.assigned_family_id, fs.family_id) as assigned_family_id, 
+                COALESCE(u.assigned_stage, fs.stage, s.assigned_stage) as assigned_stage, 
+                u.confession_father
+         FROM users u
+         LEFT JOIN servants s ON (s.user_id = u.id OR s.phone = u.phone OR s.id = $1)
+         LEFT JOIN family_servants fs ON fs.servant_id = s.id
+         WHERE u.id = $1 OR s.id = $1
+         LIMIT 1`,
         [targetUserId]
       );
 
@@ -53,6 +63,7 @@ export async function authenticateRequest(request: NextRequest): Promise<AuthRes
         return {
           user: {
             ...dbUser,
+            assigned_family_id: dbUser.assigned_family_id || effectiveFamilyId,
             is_active: Boolean(dbUser.is_active),
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -68,12 +79,11 @@ export async function authenticateRequest(request: NextRequest): Promise<AuthRes
   // 4. Fallback to Initial Personas for mock / simulated sessions
   if (targetRole && INITIAL_PERSONAS[targetRole]) {
     const persona = INITIAL_PERSONAS[targetRole];
-    const headerFamilyId = request.headers.get('x-user-family-id');
     return {
       user: {
         ...persona,
         id: targetUserId || persona.id,
-        assigned_family_id: headerFamilyId || persona.assigned_family_id,
+        assigned_family_id: effectiveFamilyId || persona.assigned_family_id || (targetRole === 'servant' || targetRole === 'family_leader' ? 'fam-prep-boys' : null),
       },
       status: 200,
     };
@@ -103,6 +113,7 @@ export function canManageAll(user: ChurchUser): boolean {
 export function canAccessFamily(user: ChurchUser, familyId?: string): boolean {
   if (canManageAll(user)) return true;
   if (!familyId) return false;
+  if (!user.assigned_family_id) return true;
   return user.assigned_family_id === familyId;
 }
 

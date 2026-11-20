@@ -735,25 +735,18 @@ function AttendanceContent() {
         </div>
 
         {/* DUAL SELECTOR BAR: 1) FAMILY BUTTON, 2) FRIDAY CALENDAR PICKER */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {/* 1. الأسرة الكنسية */}
-          <div className="bg-white rounded-2xl border border-[#EAE3E4] p-3 shadow-xs space-y-1.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-bold flex items-center gap-1.5 text-[#421923]">
+        {canManageAllFamilies ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {/* 1. الأسرة الكنسية */}
+            <div className="bg-white rounded-2xl border border-[#EAE3E4] p-2.5 shadow-xs flex items-center justify-between gap-2">
+              <span className="font-bold flex items-center gap-1.5 text-xs text-[#421923] shrink-0">
                 <Users className="w-4 h-4 text-[#702C3B]" />
-                الأسرة الكنسية:
+                الأسرة:
               </span>
-              <span className="text-[10px] text-[#81777A]">
-                {canManageAllFamilies ? 'اختر الأسرة' : '🔒 أسرتك المعتمدة'}
-              </span>
-            </div>
-
-            <div className="relative">
               <select
                 value={selectedFamilyId}
-                disabled={!canManageAllFamilies}
                 onChange={(e) => setSelectedFamilyId(e.target.value)}
-                className="w-full p-2.5 pr-3 pl-8 text-xs font-bold rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] text-[#421923] focus:outline-none focus:border-[#702C3B] cursor-pointer"
+                className="w-full max-w-[220px] p-1.5 pr-2 pl-6 text-xs font-bold rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] text-[#421923] focus:outline-none focus:border-[#702C3B] cursor-pointer"
               >
                 {families.map((f) => (
                   <option key={f.id} value={f.id}>
@@ -762,29 +755,16 @@ function AttendanceContent() {
                 ))}
               </select>
             </div>
-          </div>
 
-          {/* 2. موعد لقاء الجمعة */}
-          <div className="bg-white rounded-2xl border border-[#EAE3E4] p-3 shadow-xs space-y-1.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-bold flex items-center gap-1.5 text-[#421923]">
-                <Calendar className="w-4 h-4 text-[#702C3B]" />
-                موعد لقاء الجمعة:
-              </span>
-              <span className="text-[11px] font-bold text-[#702C3B] truncate max-w-[140px]">
-                {formattedDateArabic}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1.5">
+            {/* 2. موعد لقاء الجمعة */}
+            <div className="bg-white rounded-2xl border border-[#EAE3E4] p-2 shadow-xs flex items-center justify-between gap-1.5">
               <button
                 type="button"
                 onClick={() => setSelectedDate(prev => stepFriday(prev, -1))}
-                className="px-2.5 py-2 rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] text-[#421923] hover:bg-[#EAE3E4] text-xs font-bold transition-all flex items-center gap-1"
+                className="p-1.5 rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] text-[#421923] hover:bg-[#EAE3E4] transition-all"
                 title="الجمعة السابقة"
               >
                 <ChevronRight className="w-4 h-4" />
-                <span className="hidden sm:inline">السابقة</span>
               </button>
 
               <button
@@ -794,24 +774,65 @@ function AttendanceContent() {
                   setCalendarMonth(new Date(y, m - 1, d));
                   setShowCalendarModal(true);
                 }}
-                className="flex-1 py-2 px-2 rounded-xl bg-[#702C3B] hover:bg-[#5A232F] text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs"
+                className="flex-1 py-1.5 px-3 rounded-xl bg-[#702C3B] hover:bg-[#5A232F] text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs truncate"
               >
-                <Calendar className="w-3.5 h-3.5" />
-                <span>لوحة التقويم 📅</span>
+                <Calendar className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{formattedDateArabic}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setSelectedDate(prev => stepFriday(prev, 1))}
-                className="px-2.5 py-2 rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] text-[#421923] hover:bg-[#EAE3E4] text-xs font-bold transition-all flex items-center gap-1"
+                className="p-1.5 rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] text-[#421923] hover:bg-[#EAE3E4] transition-all"
                 title="الجمعة التالية"
               >
-                <span className="hidden sm:inline">التالية</span>
                 <ChevronLeft className="w-4 h-4" />
               </button>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="bg-white rounded-2xl border border-[#EAE3E4] p-2.5 shadow-xs flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <span className="px-3 py-1.5 rounded-xl bg-[#FAF5F6] border border-[#EAE3E4] text-[#702C3B] text-xs font-extrabold flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5" />
+                <span>{families.find(f => f.id === selectedFamilyId)?.name || 'إعدادي بنين'}</span>
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1 mr-auto">
+              <button
+                type="button"
+                onClick={() => setSelectedDate(prev => stepFriday(prev, -1))}
+                className="p-1.5 rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] text-[#421923] hover:bg-[#EAE3E4] transition-all"
+                title="الجمعة السابقة"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const [y, m, d] = selectedDate.split('-').map(Number);
+                  setCalendarMonth(new Date(y, m - 1, d));
+                  setShowCalendarModal(true);
+                }}
+                className="py-1.5 px-3 rounded-xl bg-[#702C3B] hover:bg-[#5A232F] text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs"
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>{formattedDateArabic}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedDate(prev => stepFriday(prev, 1))}
+                className="p-1.5 rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] text-[#421923] hover:bg-[#EAE3E4] transition-all"
+                title="الجمعة التالية"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* MODAL: FRIDAY CALENDAR PICKER */}
         {showCalendarModal && (
@@ -940,9 +961,17 @@ function AttendanceContent() {
           </div>
         )}
 
-        {/* 4 Stats Pill Cards Row */}
+        {/* 4 Interactive Stats Cards (Click to Filter) */}
         <div className="grid grid-cols-4 gap-2">
-          <div className="bg-white p-2.5 rounded-2xl border border-[#EAE3E4] text-center shadow-xs">
+          <button
+            type="button"
+            onClick={() => setStatusFilter('all')}
+            className={`p-2 rounded-2xl border text-center transition-all ${
+              statusFilter === 'all'
+                ? 'bg-[#702C3B]/5 border-[#702C3B] ring-2 ring-[#702C3B] shadow-sm'
+                : 'bg-white border-[#EAE3E4] hover:bg-gray-50'
+            }`}
+          >
             <span className="text-[10px] text-[#81777A] block">إجمالي</span>
             <span className="text-lg font-bold text-[#282326] block leading-tight my-0.5">
               {activeTab === 'members' ? totalMembers : totalServants}
@@ -950,9 +979,17 @@ function AttendanceContent() {
             <span className="text-[9px] text-[#81777A] block">
               {activeTab === 'members' ? 'مخدوم' : 'خادم'}
             </span>
-          </div>
+          </button>
 
-          <div className="bg-[#F0FDF4] p-2.5 rounded-2xl border border-[#BBF7D0] text-center shadow-xs">
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'present' ? 'all' : 'present')}
+            className={`p-2 rounded-2xl border text-center transition-all ${
+              statusFilter === 'present'
+                ? 'bg-[#ECFDF5] border-[#10B981] ring-2 ring-[#10B981] shadow-sm'
+                : 'bg-[#F0FDF4] border-[#BBF7D0] hover:bg-emerald-100/60'
+            }`}
+          >
             <span className="text-[10px] text-[#166534] block">الحاضرون</span>
             <span className="text-lg font-bold text-[#166534] block leading-tight my-0.5">
               {activeTab === 'members' ? presentMembers : presentServants}
@@ -960,9 +997,17 @@ function AttendanceContent() {
             <span className="text-[9px] font-bold text-[#166534] block">
               ({activeTab === 'members' ? memberRate : (totalServants > 0 ? Math.round((presentServants / totalServants) * 100) : 0)}%)
             </span>
-          </div>
+          </button>
 
-          <div className="bg-[#FFF1F2] p-2.5 rounded-2xl border border-[#FECDD3] text-center shadow-xs">
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'absent' ? 'all' : 'absent')}
+            className={`p-2 rounded-2xl border text-center transition-all ${
+              statusFilter === 'absent'
+                ? 'bg-[#FFE4E6] border-[#F43F5E] ring-2 ring-[#F43F5E] shadow-sm'
+                : 'bg-[#FFF1F2] border-[#FECDD3] hover:bg-rose-100/60'
+            }`}
+          >
             <span className="text-[10px] text-[#991B1B] block">الغائبون</span>
             <span className="text-lg font-bold text-[#991B1B] block leading-tight my-0.5">
               {activeTab === 'members' ? absentMembers : absentServants}
@@ -970,9 +1015,17 @@ function AttendanceContent() {
             <span className="text-[9px] font-bold text-[#991B1B] block">
               افتقاد
             </span>
-          </div>
+          </button>
 
-          <div className="bg-[#FFFBEB] p-2.5 rounded-2xl border border-[#FDE68A] text-center shadow-xs">
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'excused' ? 'all' : 'excused')}
+            className={`p-2 rounded-2xl border text-center transition-all ${
+              statusFilter === 'excused'
+                ? 'bg-[#FEF3C7] border-[#F59E0B] ring-2 ring-[#F59E0B] shadow-sm'
+                : 'bg-[#FFFBEB] border-[#FDE68A] hover:bg-amber-100/60'
+            }`}
+          >
             <span className="text-[10px] text-[#92400E] block">المعتذرون</span>
             <span className="text-lg font-bold text-[#92400E] block leading-tight my-0.5">
               {activeTab === 'members' ? excusedMembers : excusedServants}
@@ -980,14 +1033,14 @@ function AttendanceContent() {
             <span className="text-[9px] font-bold text-[#92400E] block">
               بعذر
             </span>
-          </div>
+          </button>
         </div>
 
         {/* Main Tab Switcher: المخدومين vs الخدام */}
         <div className="bg-[#EAE3E4]/60 p-1 rounded-2xl flex items-center gap-1">
           <button
             onClick={() => setActiveTab('members')}
-            className={`flex-1 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
               activeTab === 'members'
                 ? 'bg-[#702C3B] text-white shadow-xs'
                 : 'text-[#421923] hover:text-[#702C3B]'
@@ -999,7 +1052,7 @@ function AttendanceContent() {
 
           <button
             onClick={() => setActiveTab('servants')}
-            className={`flex-1 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
               activeTab === 'servants'
                 ? 'bg-[#702C3B] text-white shadow-xs'
                 : 'text-[#421923] hover:text-[#702C3B]'
@@ -1010,171 +1063,125 @@ function AttendanceContent() {
           </button>
         </div>
 
-        {/* Action & View Mode Switcher Toolbar */}
-        <div className="bg-white p-2.5 rounded-2xl border border-[#EAE3E4] shadow-xs space-y-2.5">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            {/* View Mode: Compact vs Detailed */}
+        {/* Unified Simplified Toolbar */}
+        <div className="bg-white p-2.5 rounded-2xl border border-[#EAE3E4] shadow-xs space-y-2">
+          <div className="flex items-center gap-2">
+            {/* Search Input */}
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-[#81777A] absolute right-3 top-2.5" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="بحث بالاسم أو الكود..."
+                className="w-full pr-9 pl-7 py-2 text-xs rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] focus:outline-none focus:border-[#702C3B] focus:bg-white"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute left-2.5 top-2.5 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Quick Bulk Present */}
+            <button
+              type="button"
+              onClick={handleBulkMarkPresent}
+              className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs active:scale-95 shrink-0"
+              title="تعليم الكل حاضر"
+            >
+              <CheckCheck className="w-4 h-4" />
+              <span className="hidden sm:inline">الكل حاضر</span>
+            </button>
+
+            {/* Reset All */}
+            <button
+              type="button"
+              onClick={handleResetAll}
+              className="p-2 rounded-xl border border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100 text-xs font-bold transition-colors shrink-0"
+              title="إعادة ضبط الحضور"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+
+            {/* View Mode Toggle */}
             {activeTab === 'members' && (
-              <div className="flex items-center bg-[#FAF5F6] p-1 rounded-xl border border-[#EAE3E4] gap-1">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('compact')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                    viewMode === 'compact'
-                      ? 'bg-[#702C3B] text-white shadow-2xs'
-                      : 'text-[#421923] hover:bg-white'
-                  }`}
-                >
-                  <Zap className="w-3.5 h-3.5" />
-                  <span>نداء سريع</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('detailed')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                    viewMode === 'detailed'
-                      ? 'bg-[#702C3B] text-white shadow-2xs'
-                      : 'text-[#421923] hover:bg-white'
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>كشف مفصل</span>
-                </button>
-              </div>
-            )}
-
-            {/* Bulk Action Buttons */}
-            <div className="flex items-center gap-1.5 mr-auto">
               <button
                 type="button"
-                onClick={handleBulkMarkPresent}
-                className="px-3 py-1.5 rounded-xl border border-emerald-300 bg-[#ECFDF5] text-[#047857] hover:bg-emerald-100 text-xs font-bold transition-colors flex items-center gap-1 shadow-2xs"
-                title="تعليم كافة المخدومين حاضر"
+                onClick={() => setViewMode(v => v === 'compact' ? 'detailed' : 'compact')}
+                className={`p-2 rounded-xl border text-xs font-bold transition-all shrink-0 ${
+                  viewMode === 'detailed'
+                    ? 'bg-[#702C3B] text-white border-[#702C3B]'
+                    : 'bg-[#FAF5F6] text-[#421923] border-[#EAE3E4] hover:bg-white'
+                }`}
+                title={viewMode === 'compact' ? 'التبديل إلى كشف مفصل' : 'التبديل إلى نداء سريع'}
               >
-                <CheckCheck className="w-3.5 h-3.5" />
-                <span>الكل حاضر</span>
+                {viewMode === 'compact' ? <Sparkles className="w-3.5 h-3.5" /> : <Zap className="w-3.5 h-3.5" />}
               </button>
+            )}
+          </div>
 
+          {/* Active Status Filter Indicator (if filtered) */}
+          {statusFilter !== 'all' && (
+            <div className="flex items-center justify-between bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-xl text-xs">
+              <span className="text-amber-900 font-bold flex items-center gap-1">
+                <span>تصفية: </span>
+                <span>
+                  {statusFilter === 'present' && 'الحاضرون فقط'}
+                  {statusFilter === 'absent' && 'الغائبون فقط (افتقاد)'}
+                  {statusFilter === 'excused' && 'المعتذرون فقط'}
+                  {statusFilter === 'unrecorded' && 'لم يُسجل بعد'}
+                </span>
+              </span>
               <button
                 type="button"
-                onClick={handleResetAll}
-                className="px-2.5 py-1.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 text-xs font-bold transition-colors flex items-center gap-1"
-                title="إعادة ضبط الكل"
+                onClick={() => setStatusFilter('all')}
+                className="text-amber-800 hover:text-amber-950 font-bold text-[11px] underline"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">إعادة ضبط</span>
+                إلغاء التصفية (عرض الكل)
               </button>
             </div>
-          </div>
+          )}
 
-          {/* Search Input */}
-          <div className="relative">
-            <Search className="w-4 h-4 text-[#81777A] absolute right-3.5 top-3" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="بحث بالاسم أو الكود..."
-              className="w-full pr-10 pl-3 py-2 text-xs rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] focus:outline-none focus:border-[#702C3B] focus:bg-white"
-            />
-          </div>
-
-          {/* Status Filter Pills */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-[11px] font-bold">
-            <span className="text-[10px] text-[#81777A] shrink-0 flex items-center gap-1">
-              <Filter className="w-3 h-3" /> تصفية:
-            </span>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('all')}
-              className={`px-2.5 py-1 rounded-lg transition-all shrink-0 ${
-                statusFilter === 'all'
-                  ? 'bg-[#421923] text-white shadow-xs'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              الكل ({activeTab === 'members' ? totalMembers : totalServants})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('unrecorded')}
-              className={`px-2.5 py-1 rounded-lg transition-all shrink-0 ${
-                statusFilter === 'unrecorded'
-                  ? 'bg-amber-600 text-white shadow-xs'
-                  : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
-              }`}
-            >
-              لم يُسجل بعد ({activeTab === 'members' ? unrecordedMembers : unrecordedServants})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('present')}
-              className={`px-2.5 py-1 rounded-lg transition-all shrink-0 ${
-                statusFilter === 'present'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
-              }`}
-            >
-              حاضر ({activeTab === 'members' ? presentMembers : presentServants})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('absent')}
-              className={`px-2.5 py-1 rounded-lg transition-all shrink-0 ${
-                statusFilter === 'absent'
-                  ? 'bg-rose-600 text-white shadow-xs'
-                  : 'bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100'
-              }`}
-            >
-              غائب ({activeTab === 'members' ? absentMembers : absentServants})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('excused')}
-              className={`px-2.5 py-1 rounded-lg transition-all shrink-0 ${
-                statusFilter === 'excused'
-                  ? 'bg-purple-600 text-white shadow-xs'
-                  : 'bg-purple-50 text-purple-800 border border-purple-200 hover:bg-purple-100'
-              }`}
-            >
-              معتذر ({activeTab === 'members' ? excusedMembers : excusedServants})
-            </button>
-          </div>
+          {/* Compact Stage Filter (فصول ومراحل الأسرة) */}
+          {activeTab === 'members' && currentFamilyStages.length > 1 && (
+            <div className="flex items-center gap-1 overflow-x-auto pb-0.5 scrollbar-none pt-1 border-t border-[#EAE3E4]/60">
+              <span className="text-[10px] text-[#81777A] font-bold shrink-0 ml-1">الفصل:</span>
+              <button
+                type="button"
+                onClick={() => setStageFilter('all')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                  stageFilter === 'all'
+                    ? 'bg-[#702C3B] text-white shadow-2xs'
+                    : 'bg-[#FAF5F6] text-[#81777A] hover:text-[#421923]'
+                }`}
+              >
+                الكل ({membersAttendance.length})
+              </button>
+              {currentFamilyStages.map(st => {
+                const count = membersAttendance.filter(m => m.stage === st).length;
+                return (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setStageFilter(st)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                      stageFilter === st
+                        ? 'bg-[#702C3B] text-white shadow-2xs'
+                        : 'bg-[#FAF5F6] text-[#81777A] hover:text-[#421923]'
+                    }`}
+                  >
+                    {st} ({count})
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
-
-        {/* Stage Filter Pills */}
-        {activeTab === 'members' && currentFamilyStages.length > 1 && (
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-            <button
-              type="button"
-              onClick={() => setStageFilter('all')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                stageFilter === 'all'
-                  ? 'bg-[#702C3B] text-white shadow-xs'
-                  : 'bg-white border border-[#EAE3E4] text-[#421923] hover:bg-[#FAF5F6]'
-              }`}
-            >
-              كافة الفصول والمراحل ({membersAttendance.length})
-            </button>
-            {currentFamilyStages.map(st => {
-              const count = membersAttendance.filter(m => m.stage === st).length;
-              return (
-                <button
-                  key={st}
-                  type="button"
-                  onClick={() => setStageFilter(st)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                    stageFilter === st
-                      ? 'bg-[#702C3B] text-white shadow-xs'
-                      : 'bg-white border border-[#EAE3E4] text-[#421923] hover:bg-[#FAF5F6]'
-                  }`}
-                >
-                  {st} ({count})
-                </button>
-              );
-            })}
-          </div>
-        )}
 
         {/* LIST 1: SERVED MEMBERS LIST */}
         {activeTab === 'members' && (

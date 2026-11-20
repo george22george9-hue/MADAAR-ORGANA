@@ -28,8 +28,8 @@ export function ServantDashboard() {
 
   const loadData = () => {
     const sId = currentUser?.id || '';
-    const fId = assignedFamilyId || '';
-    fetch(`/api/dashboard?role=servant&servantId=${sId}&familyId=${fId}`)
+    const fId = assignedFamilyId || (currentUser as any)?.assigned_family_id || 'fam-prep-boys';
+    fetch(`/api/dashboard?role=servant&servantId=${sId}&familyId=${fId}&userId=${sId}&userFamilyId=${fId}`)
       .then(r => r.json())
       .then(res => {
         if (res && res.success && res.data) {
