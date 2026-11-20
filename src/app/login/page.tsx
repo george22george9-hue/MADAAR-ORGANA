@@ -27,7 +27,8 @@ import {
   AlertCircle,
   Building2,
   KeyRound,
-  ShieldAlert
+  ShieldAlert,
+  MessageCircle
 } from 'lucide-react';
 import { getStagesForFamily } from '@/lib/constants/stages';
 
@@ -201,11 +202,14 @@ export default function LoginPage() {
             أ
           </div>
           <div>
+            <div className="text-xs font-bold text-[#702C3B] tracking-wide mb-0.5">
+              مطرانية شبرا الخيمة وتوابعها
+            </div>
             <h1 className="text-xl md:text-2xl font-bold text-[#421923] tracking-tight">
               أورجانا | ORGANA
             </h1>
-            <p className="text-xs font-semibold text-[#702C3B] mt-0.5">
-              كنيسة الشهيد العظيم مارجرجس — سندبيس
+            <p className="text-xs font-semibold text-[#421923] mt-0.5">
+              كنيسة الشهيد العظيم مارجرجس بسندبيس
             </p>
             <p className="text-[11px] text-[#81777A] mt-0.5">
               منظومة إدارة خدمة الكنيسة ومدارس الأحد • العام الكنسي 2026–2027
@@ -566,9 +570,22 @@ export default function LoginPage() {
           </form>
         )}
 
-        {/* Footer Note */}
-        <div className="text-center text-[11px] text-[#81777A] pt-2">
-          كنيسة الشهيد العظيم مارجرجس بسندبيس • تطوير MADAAR Technologies
+        {/* Contact Developer Simple Button & Footer */}
+        <div className="flex flex-col items-center gap-2 pt-2 text-center">
+          <a
+            href={`https://wa.me/201202074649?text=${encodeURIComponent(
+              'سلام ونعمة يا باشمهندس.. بتواصل معاك بخصوص منظومة أورجانا كنيسة مارجرجس بسندبيس.'
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all shadow-2xs active:scale-95"
+          >
+            <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+            <span>تواصل مع المطور</span>
+          </a>
+          <div className="text-[10px] text-[#81777A] font-semibold tracking-wide">
+            ORGANA • MADAAR Technologies
+          </div>
         </div>
       </div>
     </div>

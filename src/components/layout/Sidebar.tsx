@@ -114,13 +114,19 @@ export function Sidebar() {
       {/* Brand Header */}
       <div className="p-4 border-b border-[#EAE3E4]">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-lg bg-[#702C3B] text-white flex items-center justify-center font-bold text-base shadow-sm">
+          <div className="w-10 h-10 rounded-xl bg-[#702C3B] text-white flex items-center justify-center font-bold text-lg shadow-sm shrink-0">
             أ
           </div>
-          <div>
-            <div className="text-[9px] text-[#702C3B] font-extrabold leading-tight">مطرانية شبرا الخيمة وتوابعها</div>
-            <div className="font-bold text-sm text-[#421923]">أورجانا</div>
-            <div className="text-[10px] text-[#81777A]">مارجرجس بسندبيس</div>
+          <div className="min-w-0">
+            <div className="text-[10px] text-[#702C3B] font-bold leading-tight truncate">
+              مطرانية شبرا الخيمة وتوابعها
+            </div>
+            <div className="font-extrabold text-sm text-[#421923] leading-snug">
+              أورجانا
+            </div>
+            <div className="text-[10px] text-[#81777A] leading-tight truncate">
+              مارجرجس بسندبيس
+            </div>
           </div>
         </div>
       </div>

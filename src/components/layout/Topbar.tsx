@@ -169,8 +169,11 @@ export function Topbar({ onToggleMobileNav }: TopbarProps) {
               أ
             </div>
             <div className="hidden sm:block">
+              <div className="text-[10px] text-[#702C3B] font-bold leading-tight">
+                مطرانية شبرا الخيمة وتوابعها
+              </div>
               <div className="font-bold text-sm text-[#421923] leading-tight">
-                مارجرجس سندبيس
+                كنيسة الشهيد العظيم مارجرجس بسندبيس
               </div>
               <div className="text-[10px] text-[#81777A] leading-tight">
                 {ROLE_LABELS[currentRole] || currentRole} • {currentUser?.full_name}

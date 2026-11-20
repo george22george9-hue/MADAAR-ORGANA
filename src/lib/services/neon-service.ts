@@ -724,9 +724,9 @@ export async function getServantsPg(familyId?: string): Promise<Servant[]> {
       s.is_active,
       COALESCE(s.assigned_stage, u.assigned_stage) as assigned_stage,
       (SELECT COUNT(DISTINCT meeting_id) FROM servant_attendance sa WHERE sa.servant_id = s.id AND sa.status = 'present') as attended_meetings,
-      (SELECT COUNT(DISTINCT activity_id) FROM meeting_activity_assignments maa WHERE maa.servant_id = s.id AND maa.participation_status = 'participated') as activities_count,
-      (SELECT COUNT(*) FROM meeting_activity_assignments maa WHERE maa.servant_id = s.id AND maa.responsibility = 'lesson_preparer' AND maa.participation_status = 'participated') as lesson_prep_count,
-      (SELECT COUNT(*) FROM meeting_activity_assignments maa WHERE maa.servant_id = s.id AND (maa.responsibility = 'main_presenter' OR maa.responsibility = 'presenter') AND maa.participation_status = 'participated') as lesson_explain_count,
+      (SELECT COUNT(*) FROM servant_attendance sa WHERE sa.servant_id = s.id AND (sa.did_lesson = 1 OR sa.did_opening = 1 OR sa.did_workshop = 1 OR sa.did_preparation = 1)) as activities_count,
+      (SELECT COUNT(*) FROM servant_attendance sa WHERE sa.servant_id = s.id AND sa.did_preparation = 1) as lesson_prep_count,
+      (SELECT COUNT(*) FROM servant_attendance sa WHERE sa.servant_id = s.id AND sa.did_lesson = 1) as lesson_explain_count,
       COALESCE(
         json_agg(DISTINCT jsonb_build_object('id', f.id, 'name', f.name, 'role', fs.role_in_family, 'stage', fs.stage)) 
         FILTER (WHERE f.id IS NOT NULL),
