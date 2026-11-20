@@ -199,8 +199,15 @@ export async function createUserPg(data: {
   return (await getUserByIdPg(id))!;
 }
 
-export async function updateUserPg(id: string, updates: Partial<ChurchUser>): Promise<ChurchUser> {
+export async function updateUserPg(id: string, updates: Partial<ChurchUser> & { assigned_stage?: string; password?: string }): Promise<ChurchUser> {
   const oldUser = await getUserByIdPg(id);
+  const rawPhone = updates.phone ? updates.phone.trim() : null;
+  const cleanPhone = rawPhone ? (normalizePhone(rawPhone) || rawPhone) : null;
+
+  let passHash: string | undefined = undefined;
+  if (updates.password && updates.password.trim()) {
+    passHash = await hashPassword(updates.password.trim());
+  }
 
   await queryPg(`
     UPDATE users
@@ -209,40 +216,69 @@ export async function updateUserPg(id: string, updates: Partial<ChurchUser>): Pr
         email = COALESCE($3, email),
         role = COALESCE($4, role),
         assigned_family_id = CASE WHEN $5::text = '__CLEAR__' THEN NULL WHEN $5::text IS NOT NULL THEN $5 ELSE assigned_family_id END,
-        confession_father = COALESCE($6, confession_father),
-        is_active = COALESCE($7, is_active),
+        assigned_stage = CASE WHEN $6::text IS NOT NULL THEN $6 ELSE assigned_stage END,
+        confession_father = COALESCE($7, confession_father),
+        is_active = COALESCE($8, is_active),
+        password_hash = COALESCE($9, password_hash),
         updated_at = now()
-    WHERE id = $8
+    WHERE id = $10
   `, [
     updates.full_name ?? null,
-    updates.phone ?? null,
+    cleanPhone ?? null,
     updates.email ?? null,
     updates.role ?? null,
     updates.assigned_family_id === null ? '__CLEAR__' : (updates.assigned_family_id ?? null),
+    updates.assigned_stage ?? null,
     updates.confession_father ?? null,
     updates.is_active !== undefined ? updates.is_active : null,
+    passHash ?? null,
     id,
   ]);
 
-  // Synchronize servant record automatically whenever user full_name or phone is edited
-  if (updates.full_name || updates.phone || updates.confession_father || updates.is_active !== undefined) {
-    await queryPg(`
-      UPDATE servants
-      SET full_name = COALESCE($1, full_name),
-          phone = COALESCE($2, phone),
-          confession_father = COALESCE($3, confession_father),
-          is_active = COALESCE($4, is_active),
-          user_id = $5,
-          updated_at = now()
-      WHERE user_id = $5 OR phone = $6 OR (phone = $2 AND $2 IS NOT NULL)
-    `, [
-      updates.full_name ?? null,
-      updates.phone ?? null,
-      updates.confession_father ?? null,
-      updates.is_active !== undefined ? updates.is_active : null,
-      id,
-      oldUser?.phone || null,
-    ]);
+  // Synchronize servant record automatically whenever user details, family or stage are edited
+  const targetFamilyId = updates.assigned_family_id || oldUser?.assigned_family_id;
+  const targetStage = updates.assigned_stage || oldUser?.assigned_stage;
+
+  await queryPg(`
+    UPDATE servants
+    SET full_name = COALESCE($1, full_name),
+        phone = COALESCE($2, phone),
+        confession_father = CASE WHEN $3::text IS NOT NULL THEN $3 ELSE confession_father END,
+        is_active = COALESCE($4, is_active),
+        assigned_stage = CASE WHEN $5::text IS NOT NULL THEN $5 ELSE assigned_stage END,
+        user_id = $6,
+        updated_at = now()
+    WHERE user_id = $6 OR phone = $7 OR (phone = $2 AND $2 IS NOT NULL)
+  `, [
+    updates.full_name ?? null,
+    cleanPhone ?? null,
+    updates.confession_father ?? null,
+    updates.is_active !== undefined ? updates.is_active : null,
+    targetStage ?? null,
+    id,
+    oldUser?.phone || null,
+  ]);
+
+  if (targetFamilyId) {
+    const servantRow = await queryOnePg(
+      `SELECT id FROM servants WHERE user_id = $1 OR phone = $2 OR phone = $3`,
+      [id, cleanPhone || '', oldUser?.phone || '']
+    );
+    if (servantRow) {
+      await queryPg(`DELETE FROM family_servants WHERE servant_id = $1 AND family_id <> $2`, [servantRow.id, targetFamilyId]);
+      const fsId = `fs-${targetFamilyId}-${servantRow.id}`;
+      await queryPg(`
+        INSERT INTO family_servants (id, family_id, servant_id, academic_year_id, role_in_family, stage)
+        VALUES ($1, $2, $3, 'ay-2026-2027', $4, $5)
+        ON CONFLICT (id) DO UPDATE SET family_id = EXCLUDED.family_id, stage = COALESCE(EXCLUDED.stage, family_servants.stage)
+      `, [
+        fsId,
+        targetFamilyId,
+        servantRow.id,
+        (updates.role || oldUser?.role) === 'family_leader' ? 'أمين أسرة' : 'خادم',
+        targetStage ?? null,
+      ]);
+    }
   }
 
   return (await getUserByIdPg(id))!;
@@ -754,6 +790,7 @@ export async function getServantsPastoralOverviewPg(familyId?: string): Promise<
     family_name: string;
     status: 'present' | 'absent' | 'excused' | 'not_recorded';
     attended_liturgy: boolean;
+    did_opening: boolean;
     prepared_notebook: boolean;
     taught_lesson: boolean;
     attended_class: boolean;
@@ -765,9 +802,11 @@ export async function getServantsPastoralOverviewPg(familyId?: string): Promise<
     presentCount: number;
     absentCount: number;
     liturgyCount: number;
+    openingCount: number;
     notebookCount: number;
     lessonCount: number;
     liturgyRate: number;
+    openingRate: number;
     notebookRate: number;
   };
 }> {
@@ -781,7 +820,8 @@ export async function getServantsPastoralOverviewPg(familyId?: string): Promise<
       COALESCE(fs.family_id, 'fam-eb') as family_id,
       COALESCE(f.name, 'غير محدد') as family_name,
       COALESCE(latest_att.status, 'not_recorded') as status,
-      COALESCE(latest_att.did_opening, 0) as attended_liturgy,
+      COALESCE(latest_att.attended_liturgy, 0) as attended_liturgy,
+      COALESCE(latest_att.did_opening, 0) as did_opening,
       COALESCE(latest_att.did_preparation, 0) as prepared_notebook,
       COALESCE(latest_att.did_lesson, 0) as taught_lesson,
       COALESCE(latest_att.did_workshop, 0) as attended_class,
@@ -794,6 +834,7 @@ export async function getServantsPastoralOverviewPg(familyId?: string): Promise<
     LEFT JOIN LATERAL (
       SELECT 
         sa.status, 
+        COALESCE(sa.attended_liturgy, 0) as attended_liturgy,
         sa.did_opening, 
         sa.did_preparation, 
         sa.did_lesson, 
@@ -826,6 +867,7 @@ export async function getServantsPastoralOverviewPg(familyId?: string): Promise<
     family_name: r.family_name,
     status: (r.status || 'not_recorded') as 'present' | 'absent' | 'excused' | 'not_recorded',
     attended_liturgy: Number(r.attended_liturgy) > 0,
+    did_opening: Number(r.did_opening) > 0,
     prepared_notebook: Number(r.prepared_notebook) > 0,
     taught_lesson: Number(r.taught_lesson) > 0,
     attended_class: Number(r.attended_class) > 0,
@@ -837,6 +879,7 @@ export async function getServantsPastoralOverviewPg(familyId?: string): Promise<
   const presentCount = servants.filter(s => s.status === 'present').length;
   const absentCount = servants.filter(s => s.status === 'absent').length;
   const liturgyCount = servants.filter(s => s.attended_liturgy).length;
+  const openingCount = servants.filter(s => s.did_opening).length;
   const notebookCount = servants.filter(s => s.prepared_notebook).length;
   const lessonCount = servants.filter(s => s.taught_lesson).length;
 
@@ -847,9 +890,11 @@ export async function getServantsPastoralOverviewPg(familyId?: string): Promise<
       presentCount,
       absentCount,
       liturgyCount,
+      openingCount,
       notebookCount,
       lessonCount,
       liturgyRate: totalServants > 0 ? Math.round((liturgyCount / totalServants) * 100) : 0,
+      openingRate: totalServants > 0 ? Math.round((openingCount / totalServants) * 100) : 0,
       notebookRate: totalServants > 0 ? Math.round((notebookCount / totalServants) * 100) : 0,
     }
   };
@@ -1499,6 +1544,7 @@ export async function getMeetingAttendancePg(meetingId: string): Promise<{
       s.id as servant_id,
       COALESCE(sa.status, 'not_recorded') as status,
       sa.excuse_reason,
+      COALESCE(sa.attended_liturgy, 0) as attended_liturgy,
       COALESCE(sa.did_opening, 0) as did_opening,
       COALESCE(sa.did_workshop, 0) as did_workshop,
       COALESCE(sa.did_preparation, 0) as did_preparation,
@@ -1623,6 +1669,8 @@ export async function bulkSaveServantAttendancePg(
     servantId?: string;
     servant_id?: string;
     status: string;
+    attended_liturgy?: number | boolean;
+    attendedLiturgy?: number | boolean;
     did_opening?: number | boolean;
     didOpening?: number | boolean;
     did_workshop?: number | boolean;
@@ -1645,6 +1693,7 @@ export async function bulkSaveServantAttendancePg(
       if (!servantId) continue;
 
       const id = `att-s-${meetingId}-${servantId}`;
+      const attendedLiturgy = (r.attended_liturgy || r.attendedLiturgy) ? 1 : 0;
       const didOpening = (r.did_opening || r.didOpening) ? 1 : 0;
       const didWorkshop = (r.did_workshop || r.didWorkshop) ? 1 : 0;
       const didPreparation = (r.did_preparation || r.didPreparation) ? 1 : 0;
@@ -1653,11 +1702,12 @@ export async function bulkSaveServantAttendancePg(
 
       await client.query(`
         INSERT INTO servant_attendance (
-          id, meeting_id, servant_id, status, did_opening, did_workshop,
+          id, meeting_id, servant_id, status, attended_liturgy, did_opening, did_workshop,
           did_preparation, did_lesson, excuse_reason, recorded_by, recorded_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())
         ON CONFLICT (meeting_id, servant_id) DO UPDATE SET
           status = EXCLUDED.status,
+          attended_liturgy = EXCLUDED.attended_liturgy,
           did_opening = EXCLUDED.did_opening,
           did_workshop = EXCLUDED.did_workshop,
           did_preparation = EXCLUDED.did_preparation,
@@ -1670,6 +1720,7 @@ export async function bulkSaveServantAttendancePg(
         meetingId,
         servantId,
         r.status || 'not_recorded',
+        attendedLiturgy,
         didOpening,
         didWorkshop,
         didPreparation,

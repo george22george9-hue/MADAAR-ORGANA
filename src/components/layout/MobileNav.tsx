@@ -81,9 +81,9 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
     return [
       { href: '/dashboard', label: 'الرئيسية', icon: LayoutDashboard },
       { href: '/attendance', label: 'الحضور', icon: CalendarCheck },
+      { href: '/notebooks', label: 'الكشكول', icon: BookOpen },
       { href: '/members', label: 'مخدوميني', icon: Users },
       { href: '/tasks', label: 'الافتقاد', icon: HeartHandshake },
-      { href: '/settings', label: 'الإعدادات', icon: Settings },
     ];
   };
 
@@ -149,6 +149,7 @@ export function MobileNav({ isOpen, onClose }: MobileNavProps) {
     // Servant
     return [
       ...common,
+      { href: '/notebooks', label: 'الكشكول', icon: BookOpen },
       { href: '/members', label: 'مخدوميني', icon: Users },
       { href: '/tasks', label: 'مهام الافتقاد', icon: HeartHandshake },
       { href: '/settings', label: 'الإعدادات', icon: Settings },

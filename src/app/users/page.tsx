@@ -11,6 +11,7 @@ import { useSearchParams } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/lib/context/auth-context';
 import { ChurchUser, UserRole, Family, JoinRequest } from '@/types/organa';
+import { getStagesForFamily } from '@/lib/constants/stages';
 import {
   ShieldCheck,
   Plus,
@@ -58,7 +59,8 @@ function UsersContent() {
   const [formEmail, setFormEmail] = useState('');
   const [formPhone, setFormPhone] = useState('');
   const [formRole, setFormRole] = useState<UserRole>('priest');
-  const [formFamilyId, setFormFamilyId] = useState('');
+  const [formFamilyId, setFormFamilyId] = useState('fam-prep-boys');
+  const [formStage, setFormStage] = useState('عام');
   const [formConfessionFather, setFormConfessionFather] = useState('');
   const [formPassword, setFormPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -100,6 +102,9 @@ function UsersContent() {
     setFormPhone('');
     setFormRole(currentRole === 'admin' ? 'priest' : 'servant');
     setFormFamilyId('fam-prep-boys');
+    const targetFam = families.find(f => f.id === 'fam-prep-boys');
+    const stages = getStagesForFamily('fam-prep-boys', targetFam?.name, targetFam?.stages);
+    setFormStage(stages[0] || 'عام');
     setFormConfessionFather('');
     setFormPassword('organa2026');
     setShowModal(true);
@@ -111,7 +116,11 @@ function UsersContent() {
     setFormEmail(u.email);
     setFormPhone(u.phone);
     setFormRole(u.role);
-    setFormFamilyId(u.assigned_family_id || '');
+    const famId = u.assigned_family_id || 'fam-prep-boys';
+    setFormFamilyId(famId);
+    const targetFam = families.find(f => f.id === famId);
+    const stages = getStagesForFamily(famId, targetFam?.name, targetFam?.stages);
+    setFormStage(u.assigned_stage || stages[0] || 'عام');
     setFormConfessionFather(u.confession_father || '');
     setFormPassword('');
     setShowModal(true);
@@ -125,13 +134,15 @@ function UsersContent() {
     try {
       const url = '/api/users';
       const method = editingUser ? 'PUT' : 'POST';
+      const isServantRole = formRole === 'family_leader' || formRole === 'servant';
       const body = {
         id: editingUser?.id,
         full_name: formName.trim(),
         email: formEmail.trim() || `${formPhone.trim()}@organa.eg`,
         phone: formPhone.trim(),
         role: formRole,
-        assigned_family_id: formRole === 'family_leader' || formRole === 'servant' ? formFamilyId || null : null,
+        assigned_family_id: isServantRole ? formFamilyId || null : null,
+        assigned_stage: isServantRole ? formStage || null : null,
         confession_father: formConfessionFather.trim() || null,
         password: formPassword.trim() || undefined,
         actorRole: currentRole,
@@ -1041,17 +1052,42 @@ function UsersContent() {
                 </div>
 
                 {(formRole === 'family_leader' || formRole === 'servant') && (
-                  <div>
-                    <label className="font-bold text-[#81777A] block mb-1">الأسرة المخصصة:</label>
-                    <select
-                      value={formFamilyId}
-                      onChange={(e) => setFormFamilyId(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] font-bold text-[#421923] focus:outline-none focus:border-[#702C3B]"
-                    >
-                      {families.map(f => (
-                        <option key={f.id} value={f.id}>{f.name}</option>
-                      ))}
-                    </select>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="font-bold text-[#81777A] block mb-1">الأسرة المخصصة (الفصل):</label>
+                      <select
+                        value={formFamilyId}
+                        onChange={(e) => {
+                          const newFamId = e.target.value;
+                          setFormFamilyId(newFamId);
+                          const famObj = families.find(f => f.id === newFamId);
+                          const stages = getStagesForFamily(newFamId, famObj?.name, famObj?.stages);
+                          setFormStage(stages[0] || 'عام');
+                        }}
+                        className="w-full p-2.5 rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] font-bold text-[#421923] focus:outline-none focus:border-[#702C3B]"
+                      >
+                        {families.map(f => (
+                          <option key={f.id} value={f.id}>{f.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-[#81777A] block mb-1">المرحلة الدراسية بالفصل:</label>
+                      <select
+                        value={formStage}
+                        onChange={(e) => setFormStage(e.target.value)}
+                        className="w-full p-2.5 rounded-xl border border-[#EAE3E4] bg-[#FAF5F6] font-bold text-[#702C3B] focus:outline-none focus:border-[#702C3B]"
+                      >
+                        {(() => {
+                          const famObj = families.find(f => f.id === formFamilyId);
+                          const stages = getStagesForFamily(formFamilyId, famObj?.name, famObj?.stages);
+                          return stages.map(st => (
+                            <option key={st} value={st}>{st}</option>
+                          ));
+                        })()}
+                      </select>
+                    </div>
                   </div>
                 )}
 

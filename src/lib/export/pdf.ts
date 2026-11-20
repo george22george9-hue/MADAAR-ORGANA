@@ -94,6 +94,7 @@ export function exportToPrintablePDF(
     <body>
       <div class="header">
         <div class="church-info">
+          <div style="font-size: 11px; color: #702C3B; font-weight: 700;">مطرانية شبرا الخيمة وتوابعها</div>
           <h2 style="margin: 0; color: #421923; font-size: 18px;">كنيسة الشهيد العظيم مارجرجس بسندبيس</h2>
           <div style="font-size: 13px; color: #702C3B; font-weight: 600; margin-top: 4px;">خدمة مدارس الأحد — منظومة أورجانا (ORGANA)</div>
         </div>

@@ -75,9 +75,12 @@ export default function AcademicYearsPage() {
         <div className="bg-gradient-to-l from-white via-[#FAF5F6] to-white rounded-3xl p-6 sm:p-8 border border-[#EAE3E4] shadow-sm relative overflow-hidden">
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div>
-              <div className="flex items-center gap-2 text-xs font-bold text-[#702C3B] tracking-wide mb-1.5">
-                <Sparkles className="w-4 h-4 text-[#702C3B]" />
-                <span>كنيسة الشهيد العظيم مارجرجس بسندبيس</span>
+              <div className="flex flex-col gap-0.5 text-xs font-bold text-[#702C3B] tracking-wide mb-1.5">
+                <span className="text-[10px] text-[#81777A]">مطرانية شبرا الخيمة وتوابعها</span>
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-[#702C3B]" />
+                  <span>كنيسة الشهيد العظيم مارجرجس بسندبيس</span>
+                </div>
               </div>
               <h1 className="text-2xl sm:text-3xl font-black text-[#421923] tracking-tight">
                 إدارة السنوات الدراسية والترحيل السنوي

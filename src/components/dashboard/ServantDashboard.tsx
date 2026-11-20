@@ -14,7 +14,8 @@ import {
   Phone,
   Check,
   ChevronLeft,
-  MessageCircle
+  MessageCircle,
+  BookOpen
 } from 'lucide-react';
 
 export function ServantDashboard() {
@@ -74,39 +75,51 @@ export function ServantDashboard() {
         <div className="text-xs text-white/80 mb-2">✝️ سلام ونعمة • خادم معتمد</div>
         <h1 className="text-xl font-bold">{currentUser?.full_name || 'خادم'}</h1>
         <div className="mt-3 pt-2.5 border-t border-white/15 flex flex-col gap-0.5">
+          <span className="text-xs text-white/90 font-bold tracking-wide">
+            مطرانية شبرا الخيمة وتوابعها
+          </span>
           <span className="text-sm text-amber-300 font-extrabold tracking-wide">
             كنيسة الشهيد العظيم مارجرجس بسندبيس
           </span>
         </div>
       </div>
 
-      {/* 3 Big Action Buttons */}
+      {/* 4 Big Action Buttons — Ultra Simple */}
       <div className="grid grid-cols-2 gap-3">
         <Link
           href="/attendance"
-          className="p-4 rounded-2xl bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 transition-all active:scale-[0.98] flex flex-col col-span-2"
+          className="p-4 rounded-2xl bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 transition-all active:scale-[0.98] flex flex-col"
         >
-          <CalendarCheck className="w-7 h-7 mb-2 opacity-90" />
-          <span className="font-bold text-base">تسجيل حضور اللقاء</span>
-          <span className="text-[11px] text-white/70 mt-0.5">اضغط لرصد حضور المخدومين</span>
+          <CalendarCheck className="w-6 h-6 mb-2 opacity-95" />
+          <span className="font-bold text-sm sm:text-base">تسجيل الحضور</span>
+          <span className="text-[10px] text-white/80 mt-0.5">رصد حضور اللقاء</span>
+        </Link>
+
+        <Link
+          href="/notebooks"
+          className="p-4 rounded-2xl bg-[#702C3B] text-white shadow-sm hover:bg-[#5A232F] transition-all active:scale-[0.98] flex flex-col"
+        >
+          <BookOpen className="w-6 h-6 mb-2 opacity-95 text-amber-200" />
+          <span className="font-bold text-sm sm:text-base">كشكول الجمعة</span>
+          <span className="text-[10px] text-white/80 mt-0.5">الدروس ومشاركات الخدام</span>
         </Link>
 
         <Link
           href="/members"
-          className="p-4 rounded-2xl bg-[#702C3B] text-white shadow-sm hover:bg-[#5A232F] transition-all active:scale-[0.98] flex flex-col"
+          className="p-4 rounded-2xl bg-purple-700 text-white shadow-sm hover:bg-purple-800 transition-all active:scale-[0.98] flex flex-col"
         >
-          <Users className="w-6 h-6 mb-2 opacity-90" />
-          <span className="font-bold text-sm">مخدوميني</span>
-          <span className="text-[10px] text-white/70 mt-0.5">{members.length} مخدوم</span>
+          <Users className="w-6 h-6 mb-2 opacity-95" />
+          <span className="font-bold text-sm sm:text-base">مخدوميني</span>
+          <span className="text-[10px] text-white/80 mt-0.5">{members.length} مخدوم</span>
         </Link>
 
         <Link
           href="/tasks"
           className="p-4 rounded-2xl bg-amber-600 text-white shadow-sm hover:bg-amber-700 transition-all active:scale-[0.98] flex flex-col"
         >
-          <HeartHandshake className="w-6 h-6 mb-2 opacity-90" />
-          <span className="font-bold text-sm">مهام الافتقاد</span>
-          <span className="text-[10px] text-white/70 mt-0.5">{tasks.length} مهام</span>
+          <HeartHandshake className="w-6 h-6 mb-2 opacity-95" />
+          <span className="font-bold text-sm sm:text-base">مهام الافتقاد</span>
+          <span className="text-[10px] text-white/80 mt-0.5">{tasks.length} مهام متابعة</span>
         </Link>
       </div>
 
@@ -179,20 +192,9 @@ export function ServantDashboard() {
         </div>
       )}
 
-      {/* Footer */}
-      <div className="text-center pt-3 pb-6 flex flex-col items-center gap-2">
-        <a
-          href={`https://wa.me/201202074649?text=${encodeURIComponent(
-            `بتواصل معاك بخصوص منظومة اورجانا الكنسية انا (${currentUser?.full_name || 'خادم'})`
-          )}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-bold transition-all shadow-sm active:scale-95"
-        >
-          <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-          <span>تواصل مع المطور عبر واتساب 💬</span>
-        </a>
-        <div className="text-[10px] text-[#81777A] font-semibold tracking-wide">
+      {/* Brand Footer */}
+      <div className="text-center pt-3 pb-6">
+        <div className="text-[11px] text-[#81777A] font-semibold tracking-wider">
           ORGANA • MADAAR Technologies
         </div>
       </div>

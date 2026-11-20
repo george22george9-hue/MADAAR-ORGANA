@@ -141,7 +141,7 @@ export function exportFridayAttendanceSheet(options: {
 
       <div class="header">
         <div class="title-box">
-          <div style="font-size: 12px; color: #702C3B; font-weight: 700;">ORGANA • MADAAR Technologies</div>
+          <div style="font-size: 11px; color: #702C3B; font-weight: 700;">مطرانية شبرا الخيمة وتوابعها</div>
           <h2 style="margin: 2px 0; color: #421923; font-size: 17px;">كنيسة الشهيد العظيم مارجرجس بسندبيس</h2>
           <div style="font-size: 12px; color: #5A232F; font-weight: 600;">خدمة مدارس الأحد — كشف الحضور والمتابعة الأسبوعي</div>
         </div>

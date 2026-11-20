@@ -9,27 +9,35 @@ import { getWeeklyReports, updateWeeklyReport } from '@/lib/services/organa-serv
 import { isNeonConfigured, getWeeklyReportsPg, updateWeeklyReportPg } from '@/lib/services/neon-service';
 import { INITIAL_PERSONAS } from '@/lib/constants/personas';
 import { UserRole } from '@/types/organa';
+import { authenticateRequest } from '@/lib/auth/server-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await authenticateRequest(request);
     const { searchParams } = new URL(request.url);
-    const familyId = searchParams.get('familyId') || undefined;
     const status = searchParams.get('status') || undefined;
-    const role = (searchParams.get('role') as UserRole) || 'priest';
-    let userFamilyId = searchParams.get('userFamilyId') || searchParams.get('familyId') || undefined;
-    if ((role === 'servant' || role === 'family_leader') && !userFamilyId) {
-      userFamilyId = INITIAL_PERSONAS[role]?.assigned_family_id || undefined;
+    const queryRole = (searchParams.get('role') as UserRole) || 'priest';
+    const effectiveRole = auth.user?.role || queryRole;
+    const isRestrictedRole = effectiveRole === 'servant' || effectiveRole === 'family_leader';
+
+    let targetFamily: string | undefined = undefined;
+    if (isRestrictedRole) {
+      targetFamily = (auth.user?.assigned_family_id || searchParams.get('userFamilyId') || INITIAL_PERSONAS[effectiveRole]?.assigned_family_id) ?? undefined;
+      if (!targetFamily) {
+        return NextResponse.json({ success: true, reports: [] });
+      }
+    } else {
+      targetFamily = searchParams.get('familyId') || undefined;
     }
 
     if (isNeonConfigured()) {
-      const targetFamily = (role === 'servant' || role === 'family_leader') ? userFamilyId : familyId;
       const reports = await getWeeklyReportsPg({ familyId: targetFamily, status });
       return NextResponse.json({ success: true, reports });
     }
 
-    const reports = getWeeklyReports({ familyId, status, userRole: role, userFamilyId });
+    const reports = getWeeklyReports({ familyId: targetFamily, status, userRole: effectiveRole, userFamilyId: targetFamily });
     return NextResponse.json({ success: true, reports });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

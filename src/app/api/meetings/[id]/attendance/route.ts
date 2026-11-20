@@ -117,6 +117,7 @@ export async function POST(
           servantId: body.servantId,
           status: body.status,
           excuseReason: body.excuseReason,
+          attendedLiturgy: body.details?.attended_liturgy,
           didOpening: body.details?.did_opening,
           didWorkshop: body.details?.did_workshop,
           didPreparation: body.details?.did_preparation,

@@ -98,6 +98,9 @@ ${(data.familyStats || []).map((f: any) => `• ${f.name}: ${f.members_count || 
         </h1>
 
         <div className="mt-3 pt-2.5 border-t border-white/15 flex flex-col gap-0.5">
+          <span className="text-xs text-white/90 font-bold tracking-wide">
+            مطرانية شبرا الخيمة وتوابعها
+          </span>
           <span className="text-sm text-amber-300 font-extrabold tracking-wide">
             كنيسة الشهيد العظيم مارجرجس بسندبيس
           </span>
@@ -419,19 +422,9 @@ ${(data.familyStats || []).map((f: any) => `• ${f.name}: ${f.members_count || 
       )}
 
       {/* Footer */}
-      <div className="text-center pt-3 pb-6 flex flex-col items-center gap-2">
-        <a
-          href={`https://wa.me/201202074649?text=${encodeURIComponent(
-            `بتواصل معاك بخصوص منظومة اورجانا الكنسية انا (${currentUser?.full_name || 'مستخدم المنظومة'})`
-          )}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-bold transition-all shadow-sm active:scale-95"
-        >
-          <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-          <span>تواصل مع المطور عبر واتساب 💬</span>
-        </a>
-        <div className="text-[10px] text-[#81777A] font-semibold tracking-wide">
+      {/* Brand Footer */}
+      <div className="text-center pt-3 pb-6">
+        <div className="text-[11px] text-[#81777A] font-semibold tracking-wider">
           ORGANA • MADAAR Technologies
         </div>
       </div>

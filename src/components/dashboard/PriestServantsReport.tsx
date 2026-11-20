@@ -37,6 +37,7 @@ interface ServantReportItem {
   family_name: string;
   status: 'present' | 'absent' | 'excused' | 'not_recorded';
   attended_liturgy: boolean;
+  did_opening: boolean;
   prepared_notebook: boolean;
   taught_lesson: boolean;
   attended_class: boolean;
@@ -51,14 +52,16 @@ export function PriestServantsReport() {
     presentCount: 0,
     absentCount: 0,
     liturgyCount: 0,
+    openingCount: 0,
     notebookCount: 0,
     lessonCount: 0,
     liturgyRate: 0,
+    openingRate: 0,
     notebookRate: 0,
   });
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState<'all' | 'absent' | 'no_notebook' | 'attended_liturgy'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'absent' | 'no_notebook' | 'attended_liturgy' | 'did_opening'>('all');
   const [isBroadcastOpen, setIsBroadcastOpen] = useState(false);
 
   const loadData = () => {
@@ -95,6 +98,9 @@ export function PriestServantsReport() {
     }
     if (activeFilter === 'attended_liturgy') {
       return s.attended_liturgy;
+    }
+    if (activeFilter === 'did_opening') {
+      return s.did_opening;
     }
     return true;
   });
@@ -146,8 +152,8 @@ export function PriestServantsReport() {
           </button>
         </div>
 
-        {/* 4 Summary KPIs */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3">
+        {/* 5 Summary KPIs */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-3">
           <div className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200">
             <div className="flex items-center justify-between mb-1">
               <span className="text-[11px] font-bold text-amber-900">حضور القداس</span>
@@ -155,6 +161,16 @@ export function PriestServantsReport() {
             </div>
             <div className="text-lg font-bold text-amber-950">
               {summary.liturgyCount} <span className="text-xs font-normal text-amber-800">خادم ({summary.liturgyRate}%)</span>
+            </div>
+          </div>
+
+          <div className="p-2.5 rounded-xl bg-sky-50/70 border border-sky-200">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] font-bold text-sky-900">تقديم الافتتاحية</span>
+              <Sparkles className="w-3.5 h-3.5 text-sky-700" />
+            </div>
+            <div className="text-lg font-bold text-sky-950">
+              {summary.openingCount || 0} <span className="text-xs font-normal text-sky-800">خادم ({summary.openingRate || 0}%)</span>
             </div>
           </div>
 
@@ -170,7 +186,7 @@ export function PriestServantsReport() {
 
           <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-[11px] font-bold text-emerald-900">إلقاء الدرس والفصل</span>
+              <span className="text-[11px] font-bold text-emerald-900">إلقاء الدرس</span>
               <GraduationCap className="w-3.5 h-3.5 text-emerald-700" />
             </div>
             <div className="text-lg font-bold text-emerald-950">
@@ -178,13 +194,13 @@ export function PriestServantsReport() {
             </div>
           </div>
 
-          <div className="p-2.5 rounded-xl bg-purple-50/70 border border-purple-200">
+          <div className="p-2.5 rounded-xl bg-purple-50/70 border border-purple-200 col-span-2 sm:col-span-1">
             <div className="flex items-center justify-between mb-1">
               <span className="text-[11px] font-bold text-purple-900">إجمالي الخدام</span>
               <Users className="w-3.5 h-3.5 text-purple-700" />
             </div>
             <div className="text-lg font-bold text-purple-950">
-              {summary.totalServants} <span className="text-xs font-normal text-purple-800">خادم مسجل</span>
+              {summary.totalServants} <span className="text-xs font-normal text-purple-800">خادم</span>
             </div>
           </div>
         </div>
@@ -240,11 +256,22 @@ export function PriestServantsReport() {
               onClick={() => setActiveFilter('attended_liturgy')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
                 activeFilter === 'attended_liturgy'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'bg-white border border-[#EAE3E4] text-emerald-700 hover:bg-emerald-50'
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'bg-white border border-[#EAE3E4] text-amber-800 hover:bg-amber-50'
               }`}
             >
               حضروا القداس ({summary.liturgyCount})
+            </button>
+
+            <button
+              onClick={() => setActiveFilter('did_opening')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                activeFilter === 'did_opening'
+                  ? 'bg-sky-600 text-white shadow-sm'
+                  : 'bg-white border border-[#EAE3E4] text-sky-800 hover:bg-sky-50'
+              }`}
+            >
+              قدموا الافتتاحية ({summary.openingCount || 0})
             </button>
           </div>
         </div>
@@ -329,6 +356,16 @@ export function PriestServantsReport() {
                   }`} title="حضور القداس الإلهي">
                     <span>⛪ القداس</span>
                     {s.attended_liturgy ? <CheckCircle2 className="w-3 h-3 text-amber-700" /> : <XCircle className="w-3 h-3 text-gray-300" />}
+                  </span>
+
+                  {/* Opening Presentation */}
+                  <span className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 ${
+                    s.did_opening
+                      ? 'bg-sky-50 text-sky-900 border border-sky-200'
+                      : 'bg-gray-50 text-gray-400 border border-gray-200'
+                  }`} title="تقديم الافتتاحية">
+                    <span>🎤 الافتتاحية</span>
+                    {s.did_opening ? <CheckCircle2 className="w-3 h-3 text-sky-700" /> : <XCircle className="w-3 h-3 text-gray-300" />}
                   </span>
 
                   {/* Notebook */}

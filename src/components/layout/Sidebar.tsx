@@ -100,6 +100,7 @@ export function Sidebar() {
     return [
       { href: '/dashboard', label: 'الرئيسية', icon: LayoutDashboard },
       { href: '/attendance', label: 'تسجيل الحضور', icon: CalendarCheck },
+      { href: '/notebooks', label: 'الكشكول', icon: BookOpen },
       { href: '/members', label: 'مخدوميني', icon: Users },
       { href: '/tasks', label: 'مهام الافتقاد', icon: HeartHandshake },
       { href: '/settings', label: 'الإعدادات', icon: Settings },
@@ -117,6 +118,7 @@ export function Sidebar() {
             أ
           </div>
           <div>
+            <div className="text-[9px] text-[#702C3B] font-extrabold leading-tight">مطرانية شبرا الخيمة وتوابعها</div>
             <div className="font-bold text-sm text-[#421923]">أورجانا</div>
             <div className="text-[10px] text-[#81777A]">مارجرجس بسندبيس</div>
           </div>

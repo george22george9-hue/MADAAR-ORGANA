@@ -196,7 +196,16 @@ function AttendanceContent() {
 
   // 1. Load Families
   useEffect(() => {
-    fetch('/api/families')
+    const famParam = (currentRole === 'family_leader' || currentRole === 'servant') && assignedFamilyId 
+      ? `?role=${currentRole}&userFamilyId=${assignedFamilyId}&familyId=${assignedFamilyId}` 
+      : `?role=${currentRole || 'priest'}`;
+    fetch(`/api/families${famParam}`, {
+      headers: {
+        'x-user-id': currentUser?.id || '',
+        'x-user-role': currentRole || 'priest',
+        'x-user-family-id': assignedFamilyId || '',
+      },
+    })
       .then(r => r.json())
       .then(res => {
         if (res.success && res.families.length > 0) {
@@ -209,7 +218,7 @@ function AttendanceContent() {
         }
       })
       .catch(console.error);
-  }, [assignedFamilyId]);
+  }, [assignedFamilyId, currentRole, currentUser]);
 
   // 2. Load Meetings
   useEffect(() => {
@@ -432,7 +441,7 @@ function AttendanceContent() {
   };
 
   // Servant Role Checkbox Toggle
-  const handleServantCheckboxToggle = (servantId: string, field: 'did_opening' | 'did_workshop' | 'did_preparation' | 'did_lesson') => {
+  const handleServantCheckboxToggle = (servantId: string, field: 'attended_liturgy' | 'did_opening' | 'did_workshop' | 'did_preparation' | 'did_lesson') => {
     setHasUnsavedChanges(true);
     setServantsAttendance(prev =>
       prev.map(s => {
@@ -501,6 +510,7 @@ function AttendanceContent() {
       records: servantsAttendance.map(s => ({
         servantId: s.servant_id,
         status: s.status || 'not_recorded',
+        attended_liturgy: s.attended_liturgy ? 1 : 0,
         did_opening: s.did_opening ? 1 : 0,
         did_workshop: s.did_workshop ? 1 : 0,
         did_preparation: s.did_preparation ? 1 : 0,
@@ -1503,13 +1513,26 @@ function AttendanceContent() {
                       )}
                     </div>
 
-                    {/* 4 CHECKBOXES FOR SERVANT */}
+                    {/* 5 CHECKBOXES FOR SERVANT */}
                     <div className="p-2.5 rounded-2xl bg-[#FAF5F6] border border-[#EAE3E4] space-y-1.5">
                       <span className="text-[10px] font-bold text-[#81777A] block">
                         مهام ومشاركات الخادم في لقاء الجمعة (يملأها أمين الأسرة):
                       </span>
 
-                      <div className="grid grid-cols-4 gap-1.5 text-xs font-bold">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 text-xs font-bold">
+                        <button
+                          type="button"
+                          onClick={() => handleServantCheckboxToggle(s.servant_id, 'attended_liturgy')}
+                          className={`py-2 px-1 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all ${
+                            s.attended_liturgy
+                              ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
+                              : 'bg-white text-[#421923] border-[#EAE3E4] hover:bg-amber-50'
+                          }`}
+                        >
+                          <span className="text-[11px]">⛪ حضور القداس</span>
+                          <span className="text-[9px]">{s.attended_liturgy ? '✓ تم' : '—'}</span>
+                        </button>
+
                         <button
                           type="button"
                           onClick={() => handleServantCheckboxToggle(s.servant_id, 'did_opening')}
@@ -1519,34 +1542,8 @@ function AttendanceContent() {
                               : 'bg-white text-[#421923] border-[#EAE3E4] hover:bg-rose-50'
                           }`}
                         >
-                          <span className="text-[11px]">شرح افتتاحية</span>
+                          <span className="text-[11px]">🎤 تقديم افتتاحية</span>
                           <span className="text-[9px]">{s.did_opening ? '✓ تم' : '—'}</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleServantCheckboxToggle(s.servant_id, 'did_workshop')}
-                          className={`py-2 px-1 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all ${
-                            s.did_workshop
-                              ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
-                              : 'bg-white text-[#421923] border-[#EAE3E4] hover:bg-amber-50'
-                          }`}
-                        >
-                          <span className="text-[11px]">ورش عمل</span>
-                          <span className="text-[9px]">{s.did_workshop ? '✓ تم' : '—'}</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleServantCheckboxToggle(s.servant_id, 'did_preparation')}
-                          className={`py-2 px-1 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all ${
-                            s.did_preparation
-                              ? 'bg-sky-700 text-white border-sky-800 shadow-xs'
-                              : 'bg-white text-[#421923] border-[#EAE3E4] hover:bg-sky-50'
-                          }`}
-                        >
-                          <span className="text-[11px]">تحضير</span>
-                          <span className="text-[9px]">{s.did_preparation ? '✓ تم' : '—'}</span>
                         </button>
 
                         <button
@@ -1558,8 +1555,34 @@ function AttendanceContent() {
                               : 'bg-white text-[#421923] border-[#EAE3E4] hover:bg-emerald-50'
                           }`}
                         >
-                          <span className="text-[11px]">شرح الدرس</span>
+                          <span className="text-[11px]">📖 إلقاء الدرس</span>
                           <span className="text-[9px]">{s.did_lesson ? '✓ تم' : '—'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleServantCheckboxToggle(s.servant_id, 'did_preparation')}
+                          className={`py-2 px-1 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all ${
+                            s.did_preparation
+                              ? 'bg-sky-700 text-white border-sky-800 shadow-xs'
+                              : 'bg-white text-[#421923] border-[#EAE3E4] hover:bg-sky-50'
+                          }`}
+                        >
+                          <span className="text-[11px]">📓 تحضير كشكول</span>
+                          <span className="text-[9px]">{s.did_preparation ? '✓ تم' : '—'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleServantCheckboxToggle(s.servant_id, 'did_workshop')}
+                          className={`py-2 px-1 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all col-span-2 sm:col-span-1 ${
+                            s.did_workshop
+                              ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
+                              : 'bg-white text-[#421923] border-[#EAE3E4] hover:bg-purple-50'
+                          }`}
+                        >
+                          <span className="text-[11px]">👥 ورش عمل</span>
+                          <span className="text-[9px]">{s.did_workshop ? '✓ تم' : '—'}</span>
                         </button>
                       </div>
                     </div>
