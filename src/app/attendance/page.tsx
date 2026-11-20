@@ -78,6 +78,7 @@ function AttendanceContent() {
   const searchParams = useSearchParams();
   const meetingParamId = searchParams.get('meetingId');
   const { currentRole, currentUser, assignedFamilyId, canManageAllFamilies } = useAuth();
+  const canEditServants = currentRole === 'family_leader' || currentRole === 'admin' || currentRole === 'priest' || currentRole === 'service_secretary';
 
   const [families, setFamilies] = useState<Family[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -430,6 +431,7 @@ function AttendanceContent() {
 
   // Servant Status Change
   const handleServantStatusChange = (servantId: string, targetStatus: AttendanceStatus) => {
+    if (!canEditServants) return;
     setHasUnsavedChanges(true);
     setServantsAttendance(prev =>
       prev.map(s => {
@@ -442,6 +444,7 @@ function AttendanceContent() {
 
   // Servant Role Checkbox Toggle
   const handleServantCheckboxToggle = (servantId: string, field: 'attended_liturgy' | 'did_opening' | 'did_workshop' | 'did_preparation' | 'did_lesson') => {
+    if (!canEditServants) return;
     setHasUnsavedChanges(true);
     setServantsAttendance(prev =>
       prev.map(s => {
@@ -459,6 +462,7 @@ function AttendanceContent() {
 
   // Bulk Mark All Present
   const handleBulkMarkPresent = () => {
+    if (activeTab === 'servants' && !canEditServants) return;
     setHasUnsavedChanges(true);
     if (activeTab === 'members') {
       setMembersAttendance(prev => prev.map(m => ({ 
@@ -473,6 +477,7 @@ function AttendanceContent() {
 
   // Reset / Clear All to Not Recorded
   const handleResetAll = () => {
+    if (activeTab === 'servants' && !canEditServants) return;
     setHasUnsavedChanges(true);
     if (activeTab === 'members') {
       setMembersAttendance(prev => prev.map(m => ({ 
@@ -526,7 +531,9 @@ function AttendanceContent() {
         const raw = localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]';
         const queue = JSON.parse(raw);
         queue.push({ meetingId: selectedMeetingId, timestamp: Date.now(), payload: membersPayload });
-        queue.push({ meetingId: selectedMeetingId, timestamp: Date.now(), payload: servantsPayload });
+        if (canEditServants) {
+          queue.push({ meetingId: selectedMeetingId, timestamp: Date.now(), payload: servantsPayload });
+        }
         localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
         setOfflineQueueCount(queue.length);
         setHasUnsavedChanges(false);
@@ -556,11 +563,13 @@ function AttendanceContent() {
         body: JSON.stringify(membersPayload),
       });
 
-      await fetch(`/api/meetings/${selectedMeetingId}/attendance`, {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify(servantsPayload),
-      });
+      if (canEditServants) {
+        await fetch(`/api/meetings/${selectedMeetingId}/attendance`, {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify(servantsPayload),
+        });
+      }
 
       // Clear draft after successful remote commit
       localStorage.removeItem(getDraftKey(selectedMeetingId));
@@ -1366,6 +1375,12 @@ function AttendanceContent() {
         {/* LIST 2: SERVANTS LIST */}
         {activeTab === 'servants' && (
           <div className="space-y-3">
+            {!canEditServants && (
+              <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl flex items-center gap-2.5 text-xs text-amber-900 font-bold shadow-xs">
+                <span className="text-base">🔒</span>
+                <span>وضع العرض فقط: رصد وتعديل حضور ومشاركات الخدام خاص بأمين الأسرة وإدارة الخدمة فقط.</span>
+              </div>
+            )}
             {filteredServants.length === 0 ? (
               <div className="text-center py-8 bg-white rounded-3xl border border-[#EAE3E4] text-xs text-[#81777A] p-4">
                 لا يوجد خدام مسجلين في هذه الأسرة حالياً. يمكنك تسكين الخدام من صفحة «الخدام».
@@ -1419,12 +1434,16 @@ function AttendanceContent() {
                       <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 text-xs font-bold">
                         <button
                           type="button"
+                          disabled={!canEditServants}
                           onClick={() => handleServantCheckboxToggle(s.servant_id, 'attended_liturgy')}
                           className={`py-2 px-1 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all ${
+                            !canEditServants ? 'cursor-default' : 'cursor-pointer'
+                          } ${
                             s.attended_liturgy
                               ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
                               : 'bg-white text-[#421923] border-[#EAE3E4] hover:bg-amber-50'
                           }`}
+                          title={!canEditServants ? 'تعديل مشاركات الخدام خاص بأمين الأسرة' : undefined}
                         >
                           <span className="text-[11px]">⛪ حضور القداس</span>
                           <span className="text-[9px]">{s.attended_liturgy ? '✓ تم' : '—'}</span>
@@ -1432,12 +1451,16 @@ function AttendanceContent() {
 
                         <button
                           type="button"
+                          disabled={!canEditServants}
                           onClick={() => handleServantCheckboxToggle(s.servant_id, 'did_opening')}
                           className={`py-2 px-1 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all ${
+                            !canEditServants ? 'cursor-default' : 'cursor-pointer'
+                          } ${
                             s.did_opening
                               ? 'bg-[#702C3B] text-white border-[#5A1E2D] shadow-xs'
                               : 'bg-white text-[#421923] border-[#EAE3E4] hover:bg-rose-50'
                           }`}
+                          title={!canEditServants ? 'تعديل مشاركات الخدام خاص بأمين الأسرة' : undefined}
                         >
                           <span className="text-[11px]">🎤 تقديم افتتاحية</span>
                           <span className="text-[9px]">{s.did_opening ? '✓ تم' : '—'}</span>
@@ -1445,12 +1468,16 @@ function AttendanceContent() {
 
                         <button
                           type="button"
+                          disabled={!canEditServants}
                           onClick={() => handleServantCheckboxToggle(s.servant_id, 'did_lesson')}
                           className={`py-2 px-1 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all ${
+                            !canEditServants ? 'cursor-default' : 'cursor-pointer'
+                          } ${
                             s.did_lesson
                               ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
                               : 'bg-white text-[#421923] border-[#EAE3E4] hover:bg-emerald-50'
                           }`}
+                          title={!canEditServants ? 'تعديل مشاركات الخدام خاص بأمين الأسرة' : undefined}
                         >
                           <span className="text-[11px]">📖 إلقاء الدرس</span>
                           <span className="text-[9px]">{s.did_lesson ? '✓ تم' : '—'}</span>
@@ -1458,12 +1485,16 @@ function AttendanceContent() {
 
                         <button
                           type="button"
+                          disabled={!canEditServants}
                           onClick={() => handleServantCheckboxToggle(s.servant_id, 'did_preparation')}
                           className={`py-2 px-1 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all ${
+                            !canEditServants ? 'cursor-default' : 'cursor-pointer'
+                          } ${
                             s.did_preparation
                               ? 'bg-sky-700 text-white border-sky-800 shadow-xs'
                               : 'bg-white text-[#421923] border-[#EAE3E4] hover:bg-sky-50'
                           }`}
+                          title={!canEditServants ? 'تعديل مشاركات الخدام خاص بأمين الأسرة' : undefined}
                         >
                           <span className="text-[11px]">📓 تحضير كشكول</span>
                           <span className="text-[9px]">{s.did_preparation ? '✓ تم' : '—'}</span>
@@ -1471,12 +1502,16 @@ function AttendanceContent() {
 
                         <button
                           type="button"
+                          disabled={!canEditServants}
                           onClick={() => handleServantCheckboxToggle(s.servant_id, 'did_workshop')}
                           className={`py-2 px-1 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all col-span-2 sm:col-span-1 ${
+                            !canEditServants ? 'cursor-default' : 'cursor-pointer'
+                          } ${
                             s.did_workshop
                               ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
                               : 'bg-white text-[#421923] border-[#EAE3E4] hover:bg-purple-50'
                           }`}
+                          title={!canEditServants ? 'تعديل مشاركات الخدام خاص بأمين الأسرة' : undefined}
                         >
                           <span className="text-[11px]">👥 ورش عمل</span>
                           <span className="text-[9px]">{s.did_workshop ? '✓ تم' : '—'}</span>
@@ -1487,36 +1522,51 @@ function AttendanceContent() {
                     {/* Servant Attendance Buttons */}
                     <div className="grid grid-cols-3 gap-2 pt-1 border-t border-gray-100">
                       <button
+                        type="button"
+                        disabled={!canEditServants}
                         onClick={() => handleServantStatusChange(s.servant_id, 'present')}
                         className={`py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                          !canEditServants ? 'cursor-default' : 'cursor-pointer'
+                        } ${
                           isPresent
                             ? 'bg-[#15803D] text-white shadow-xs'
                             : 'bg-[#F8F9FA] text-[#81777A] border border-[#EAE3E4] hover:bg-emerald-50'
                         }`}
+                        title={!canEditServants ? 'رصد حضور الخدام خاص بأمين الأسرة والإدارة فقط' : undefined}
                       >
                         <CheckCircle2 className="w-4 h-4" />
                         <span>حاضر</span>
                       </button>
 
                       <button
+                        type="button"
+                        disabled={!canEditServants}
                         onClick={() => handleServantStatusChange(s.servant_id, 'absent')}
                         className={`py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                          !canEditServants ? 'cursor-default' : 'cursor-pointer'
+                        } ${
                           isAbsent
                             ? 'bg-[#B91C1C] text-white shadow-xs'
                             : 'bg-[#F8F9FA] text-[#81777A] border border-[#EAE3E4] hover:bg-rose-50'
                         }`}
+                        title={!canEditServants ? 'رصد حضور الخدام خاص بأمين الأسرة والإدارة فقط' : undefined}
                       >
                         <XCircle className="w-4 h-4" />
                         <span>غائب</span>
                       </button>
 
                       <button
+                        type="button"
+                        disabled={!canEditServants}
                         onClick={() => handleServantStatusChange(s.servant_id, 'excused')}
                         className={`py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                          !canEditServants ? 'cursor-default' : 'cursor-pointer'
+                        } ${
                           isExcused
                             ? 'bg-[#854D0E] text-white shadow-xs'
                             : 'bg-[#F8F9FA] text-[#81777A] border border-[#EAE3E4] hover:bg-amber-50'
                         }`}
+                        title={!canEditServants ? 'رصد حضور الخدام خاص بأمين الأسرة والإدارة فقط' : undefined}
                       >
                         <HelpCircle className="w-4 h-4" />
                         <span>معتذر</span>

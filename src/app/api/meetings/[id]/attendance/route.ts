@@ -98,6 +98,16 @@ export async function POST(
 
       const recorder = { id: auth.user.id, name: auth.user.full_name };
 
+      // RBAC: Only family_leader, admin, priest, or service_secretary can record/modify servant attendance
+      if (body.type === 'bulk_servants' || body.type === 'single_servant') {
+        if (auth.user.role === 'servant') {
+          return NextResponse.json(
+            { success: false, error: 'غير مصرح للخادم بتعديل حضور الخدام. رصد مشاركات الخدام خاص بأمين الأسرة وإدارة الخدمة فقط.' },
+            { status: 403 }
+          );
+        }
+      }
+
       if (body.type === 'bulk_members') {
         await bulkSaveMemberAttendancePg(params.id, body.records, recorder);
       } else if (body.type === 'bulk_servants') {
