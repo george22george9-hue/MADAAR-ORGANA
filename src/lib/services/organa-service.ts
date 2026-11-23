@@ -680,7 +680,7 @@ export function getServants(filters?: { familyId?: string; userRole?: UserRole; 
       is_active: Boolean(r.is_active),
       assigned_family_ids: fams.map(f => f.id),
       assigned_family_names: fams.map(f => f.name),
-      attendance_rate: r.attended_meetings ? Math.min(100, Math.round((r.attended_meetings / 4) * 100)) : 100,
+      attendance_rate: r.attended_meetings ? Math.min(100, Math.round((Number(r.attended_meetings) / Math.max(1, Number(r.attended_meetings))) * 100)) : 0,
     };
   });
 }

@@ -93,7 +93,9 @@ export async function sendPushToUserPg(userId: string, payload: PushPayload): Pr
   }>(`
     SELECT id, endpoint, p256dh, auth
     FROM push_subscriptions
-    WHERE user_id = $1
+    WHERE user_id = $1 
+       OR user_id IN (SELECT user_id FROM servants WHERE id = $1)
+       OR user_id IN (SELECT id FROM servants WHERE user_id = $1)
   `, [userId]);
 
   if (rows.length === 0) return 0;

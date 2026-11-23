@@ -13,7 +13,7 @@ import {
   deleteNotificationPg,
   sendTuesdayNotebookReminderPg,
 } from '@/lib/services/neon-service';
-import { sendPushToAllPg } from '@/lib/services/push-service';
+import { sendPushToAllPg, sendPushToUserPg } from '@/lib/services/push-service';
 import { UserRole } from '@/types/organa';
 
 export const dynamic = 'force-dynamic';
@@ -23,9 +23,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId') || undefined;
     const familyId = searchParams.get('familyId') || undefined;
+    const history = searchParams.get('history') === 'true';
 
     if (isNeonConfigured()) {
-      const notifications = await getNotificationsPg(userId, familyId);
+      const notifications = await getNotificationsPg(userId, familyId, history);
       const unreadCount = notifications.filter(n => !n.is_read).length;
       return NextResponse.json({ success: true, notifications, unreadCount });
     }
@@ -111,6 +112,47 @@ export async function POST(request: NextRequest) {
       enforcedTitle = '📢 تنبيه من إدارة الأبلكيشن';
     }
 
+    // 3. Direct Private Notification to a Specific Servant (خاص بالخادم ده لوحده ومتروحش لأي خادم تاني نهائياً)
+    if (action === 'direct_servant' || body.targetType === 'user') {
+      const targetUserId = body.targetUserId || body.targetServantId;
+      const targetServantName = body.targetServantName || 'الخادم';
+
+      if (!targetUserId) {
+        return NextResponse.json({ success: false, error: 'يرجى تحديد الخادم المستلم للرسالة' }, { status: 400 });
+      }
+
+      const directTitle = `🔒 رسالة خاصة من ${enforcedSenderName}`;
+      if (isNeonConfigured()) {
+        const notif = await createNotificationPg({
+          target_type: 'user',
+          target_id: targetUserId,
+          sender_id: body.senderId || null,
+          sender_name: enforcedSenderName,
+          sender_role: enforcedRole,
+          title: directTitle,
+          message: message,
+          type: 'general',
+        });
+
+        // Deliver lock-screen push notification ONLY to this specific servant
+        sendPushToUserPg(targetUserId, {
+          title: `${directTitle} — مارجرجس سندبيس`,
+          body: message,
+          url: '/alerts',
+          tag: `direct-servant-${targetUserId}`,
+        }).catch(console.error);
+
+        return NextResponse.json({
+          success: true,
+          notification: notif,
+          message: `تم إرسال الرسالة الخاصة إلى الخادم (${targetServantName}) بنجاح وسرية تامة.`
+        });
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
+    // 4. Broadcast Message to ALL servants with Strict Role & Sender Enforcement
     if (isNeonConfigured()) {
       const notif = await createNotificationPg({
         target_type: 'all',

@@ -724,6 +724,7 @@ export async function getServantsPg(familyId?: string): Promise<Servant[]> {
       s.is_active,
       COALESCE(s.assigned_stage, u.assigned_stage) as assigned_stage,
       (SELECT COUNT(DISTINCT meeting_id) FROM servant_attendance sa WHERE sa.servant_id = s.id AND sa.status = 'present') as attended_meetings,
+      (SELECT COUNT(DISTINCT meeting_id) FROM servant_attendance sa WHERE sa.servant_id = s.id AND sa.status IN ('present', 'absent', 'excused')) as total_recorded_meetings,
       (SELECT COUNT(*) FROM servant_attendance sa WHERE sa.servant_id = s.id AND (sa.did_lesson = 1 OR sa.did_opening = 1 OR sa.did_workshop = 1 OR sa.did_preparation = 1)) as activities_count,
       (SELECT COUNT(*) FROM servant_attendance sa WHERE sa.servant_id = s.id AND sa.did_preparation = 1) as lesson_prep_count,
       (SELECT COUNT(*) FROM servant_attendance sa WHERE sa.servant_id = s.id AND sa.did_lesson = 1) as lesson_explain_count,
@@ -747,6 +748,7 @@ export async function getServantsPg(familyId?: string): Promise<Servant[]> {
     const assigned_family_names = famsInfo.map(f => f.name);
     const primaryFam = famsInfo[0];
     const attended = Number(r.attended_meetings || 0);
+    const totalRecorded = Number(r.total_recorded_meetings || 0);
 
     return {
       id: r.id,
@@ -768,7 +770,7 @@ export async function getServantsPg(familyId?: string): Promise<Servant[]> {
       activities_count: Number(r.activities_count || 0),
       lesson_prep_count: Number(r.lesson_prep_count || 0),
       lesson_explain_count: Number(r.lesson_explain_count || 0),
-      attendance_rate: attended > 0 ? Math.min(100, Math.round((attended / 4) * 100)) : 100,
+      attendance_rate: totalRecorded > 0 ? Math.round((attended / totalRecorded) * 100) : 0,
     } as Servant;
   });
 
@@ -1953,21 +1955,31 @@ export async function updateAbsenceAlertStatusPg(alertId: string, status: string
 // --------------------------------------------------------------------
 // 9. Notifications & Pastoral Care Broadcasts
 // --------------------------------------------------------------------
-export async function getNotificationsPg(userId?: string, familyId?: string): Promise<ChurchNotification[]> {
-  let sql = `
-    SELECT * FROM notifications
-    WHERE target_type = 'all'
-  `;
+export async function getNotificationsPg(userId?: string, familyId?: string, includeAllForAdmin?: boolean): Promise<ChurchNotification[]> {
+  let sql: string;
   const params: any[] = [];
-  if (userId) {
-    params.push(userId);
-    sql += ` OR (target_type = 'user' AND target_id = $${params.length})`;
+
+  if (includeAllForAdmin) {
+    sql = `SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50`;
+  } else {
+    sql = `
+      SELECT * FROM notifications
+      WHERE target_type = 'all'
+    `;
+    if (userId) {
+      params.push(userId);
+      sql += ` OR (target_type = 'user' AND (
+        target_id = $${params.length} 
+        OR target_id IN (SELECT id FROM servants WHERE user_id = $${params.length})
+        OR target_id IN (SELECT user_id FROM servants WHERE id = $${params.length})
+      ))`;
+    }
+    if (familyId) {
+      params.push(familyId);
+      sql += ` OR (target_type = 'family' AND target_id = $${params.length})`;
+    }
+    sql += ` ORDER BY created_at DESC LIMIT 50`;
   }
-  if (familyId) {
-    params.push(familyId);
-    sql += ` OR (target_type = 'family' AND target_id = $${params.length})`;
-  }
-  sql += ` ORDER BY created_at DESC LIMIT 50`;
 
   const rows = await queryPg(sql, params);
   return rows.map(r => ({

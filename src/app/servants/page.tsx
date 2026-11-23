@@ -25,11 +25,13 @@ import {
   CheckCircle2,
   X,
   Trash2,
-  GraduationCap
+  GraduationCap,
+  Send
 } from 'lucide-react';
 import { exportToExcel } from '@/lib/export/excel';
 import { exportToPrintablePDF } from '@/lib/export/pdf';
 import { getStagesForFamily, getStageBadgeStyle } from '@/lib/constants/stages';
+import { BroadcastModal } from '@/components/notifications/BroadcastModal';
 
 export default function ServantsPage() {
   const { currentRole, canManageAllFamilies, assignedFamilyId } = useAuth();
@@ -39,6 +41,7 @@ export default function ServantsPage() {
   const [search, setSearch] = useState('');
   const [selectedFamilyFilter, setSelectedFamilyFilter] = useState<string>('all');
   const [viewingServant, setViewingServant] = useState<Servant | null>(null);
+  const [directNotifServant, setDirectNotifServant] = useState<Servant | null>(null);
   const [servantAssignmentsHistory, setServantAssignmentsHistory] = useState<ServantAcademicAssignment[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingServant, setEditingServant] = useState<Servant | null>(null);
@@ -396,10 +399,19 @@ export default function ServantsPage() {
               {/* Actions */}
               <div className="pt-3 border-t border-[#EAE3E4] flex items-center justify-between">
                 <span className="text-[11px] text-[#81777A]">
-                  حضور: <strong className="text-[#10B981]">{srv.attendance_rate || 100}%</strong>
+                  حضور: <strong className="text-[#10B981]">{srv.attendance_rate || 0}%</strong>
                 </span>
 
                 <div className="flex items-center gap-1.5">
+                  {canManageAllFamilies && (
+                    <button
+                      onClick={() => setDirectNotifServant(srv)}
+                      className="p-1.5 rounded-xl border border-purple-200 text-purple-700 bg-purple-50/50 hover:bg-purple-100 transition-colors"
+                      title={`إرسال إشعار خاص وسري إلى ${srv.full_name}`}
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <button
                     onClick={() => openViewServant(srv)}
                     className="p-1.5 rounded-xl border border-[#EAE3E4] text-[#81777A] hover:bg-[#FAF5F6] hover:text-[#702C3B] transition-colors"
@@ -514,7 +526,20 @@ export default function ServantsPage() {
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-[#EAE3E4] flex justify-end">
+              <div className="pt-3 border-t border-[#EAE3E4] flex items-center justify-between gap-2">
+                {canManageAllFamilies && (
+                  <button
+                    onClick={() => {
+                      const s = viewingServant;
+                      setViewingServant(null);
+                      setDirectNotifServant(s);
+                    }}
+                    className="py-2 px-3 rounded-xl bg-purple-50 border border-purple-200 text-purple-800 text-xs font-bold hover:bg-purple-100 flex items-center gap-1.5 transition-colors"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>إرسال إشعار خاص وسري للخادم 🔒</span>
+                  </button>
+                )}
                 <button
                   onClick={() => setViewingServant(null)}
                   className="px-4 py-2 rounded-xl bg-[#702C3B] text-white font-bold text-xs"
@@ -653,6 +678,18 @@ export default function ServantsPage() {
               </form>
             </div>
           </div>
+        )}
+        {/* Direct Targeted Notification Modal */}
+        {directNotifServant && (
+          <BroadcastModal
+            isOpen={Boolean(directNotifServant)}
+            onClose={() => setDirectNotifServant(null)}
+            initialTargetServant={{
+              id: directNotifServant.id,
+              user_id: directNotifServant.user_id || undefined,
+              full_name: directNotifServant.full_name,
+            }}
+          />
         )}
       </div>
     </AppLayout>
