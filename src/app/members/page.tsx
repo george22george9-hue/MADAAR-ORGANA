@@ -766,7 +766,7 @@ export default function MembersPage() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setVisitationModalMember(viewingMember)}
-                    className="px-3 py-1.5 rounded-xl bg-linear-to-l from-[#702C3B] to-[#551D2A] text-white font-bold text-[11px] flex items-center gap-1.5 shadow-xs hover:shadow-md transition-all cursor-pointer"
+                    className="px-3 py-1.5 rounded-xl bg-[#702C3B] hover:bg-[#58222e] text-white font-bold text-[11px] flex items-center gap-1.5 shadow-xs hover:shadow-md transition-all cursor-pointer"
                   >
                     <HeartHandshake className="w-3.5 h-3.5" />
                     <span>تسجيل افتقاد 🏠</span>

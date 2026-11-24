@@ -174,8 +174,8 @@ export default function TasksPage() {
         {/* Main Header Card */}
         <div className="bg-white rounded-3xl p-6 border border-[#EAE3E4] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-5">
           <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-linear-to-br from-[#702C3B] to-[#421923] text-white flex items-center justify-center shadow-md shadow-rose-900/10 shrink-0">
-              <HeartHandshake className="w-6 h-6 text-rose-100" />
+            <div className="w-12 h-12 rounded-2xl bg-[#702C3B] text-white flex items-center justify-center shadow-md shadow-rose-900/10 shrink-0">
+              <HeartHandshake className="w-6 h-6 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1">
@@ -196,7 +196,7 @@ export default function TasksPage() {
           <div className="flex items-center gap-2 self-start md:self-center">
             <button
               onClick={() => setShowVisitationModal(true)}
-              className="px-5 py-3 rounded-2xl bg-linear-to-l from-[#702C3B] to-[#551D2A] text-white text-xs font-bold hover:shadow-lg hover:shadow-rose-900/20 active:scale-98 transition-all flex items-center gap-2 cursor-pointer shrink-0"
+              className="px-5 py-3 rounded-2xl bg-[#702C3B] hover:bg-[#58222e] text-white text-xs font-bold hover:shadow-lg hover:shadow-rose-900/20 active:scale-98 transition-all flex items-center gap-2 cursor-pointer shrink-0"
             >
               <Plus className="w-4 h-4" />
               <span>تسجيل افتقاد جديد 🏠</span>
@@ -306,7 +306,7 @@ export default function TasksPage() {
                   value={visitationSearch}
                   onChange={(e) => setVisitationSearch(e.target.value)}
                   placeholder="ابحث باسم المخدوم، الخادم، الكود، أو تفاصيل الزيارة..."
-                  className="w-full pr-10 pl-3 py-2 rounded-xl border border-[#EAE3E4] text-xs bg-stone-50/50 focus:bg-white focus:outline-hidden focus:border-[#702C3B] focus:ring-1 focus:ring-[#702C3B] transition-all"
+                  className="w-full pr-10 pl-3 py-2 rounded-xl border border-[#EAE3E4] text-xs bg-stone-50/50 focus:bg-white focus:outline-none focus:border-[#702C3B] focus:ring-1 focus:ring-[#702C3B] transition-all"
                 />
               </div>
 
