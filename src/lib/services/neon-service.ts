@@ -4333,3 +4333,179 @@ export async function getHistoricalAttendancePg(options: {
   return queryPg(sql, params);
 }
 
+// ====================================================================
+// 27. Pastoral Visitations (تسجيل وتوثيق الافتقاد الرعوي)
+// ====================================================================
+
+export async function recordPastoralVisitationPg(data: {
+  memberId: string;
+  familyId?: string;
+  visitationDate: string;
+  method: string;
+  servantIds: string[];
+  servantNames: string[];
+  notes: string;
+  recordedById?: string;
+  recordedByName?: string;
+}): Promise<any> {
+  const id = `vis-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+  const res = await queryPg(`
+    INSERT INTO pastoral_visitations (
+      id, member_id, family_id, visitation_date, method, servant_ids, servant_names, notes, recorded_by_id, recorded_by_name, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now())
+    RETURNING *
+  `, [
+    id,
+    data.memberId,
+    data.familyId || null,
+    data.visitationDate,
+    data.method,
+    data.servantIds,
+    data.servantNames,
+    data.notes,
+    data.recordedById || null,
+    data.recordedByName || null
+  ]);
+
+  // 1. Auto-resolve any pending followup tasks for this member
+  try {
+    const methodArabic =
+      data.method === 'home_visit'
+        ? 'زيارة منزلية'
+        : data.method === 'phone_call'
+        ? 'مكالمة هاتفية'
+        : 'مقابلة في الكنيسة';
+    const servantsList = data.servantNames.length > 0 ? data.servantNames.join(' و ') : 'خدام الأسرة';
+
+    await queryPg(`
+      UPDATE followup_tasks
+      SET is_completed = true,
+          completed_at = now(),
+          result = 'successful_contact',
+          workflow_status = 'completed',
+          notes = COALESCE(notes, '') || E'\n[تم إتمام الافتقاد: ' || $1 || ' بواسطة: ' || $2 || ' يوم ' || $3 || ']'
+      WHERE member_id = $4 AND is_completed = false
+    `, [
+      methodArabic,
+      servantsList,
+      data.visitationDate,
+      data.memberId
+    ]);
+  } catch (err) {
+    console.error('Error auto-resolving followup tasks upon visitation:', err);
+  }
+
+  // 2. Log to member_history
+  try {
+    const historyId = `mh-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const methodArabic =
+      data.method === 'home_visit'
+        ? 'زيارة منزلية'
+        : data.method === 'phone_call'
+        ? 'اتصال هاتفي'
+        : 'مقابلة في الكنيسة';
+    const servantsList = data.servantNames.length > 0 ? data.servantNames.join(' و ') : 'خدام الأسرة';
+
+    await queryPg(`
+      INSERT INTO member_history (id, member_id, action_type, description, created_by, created_at)
+      VALUES ($1, $2, 'pastoral_visitation', $3, $4, now())
+    `, [
+      historyId,
+      data.memberId,
+      `تم تسجيل افتقاد (${methodArabic}) بتاريخ ${data.visitationDate} بواسطة: ${servantsList}. ملخص: ${data.notes.slice(0, 150)}`,
+      data.recordedByName || 'خادم'
+    ]);
+  } catch (err) {
+    console.error('Error logging visitation to member_history:', err);
+  }
+
+  // 3. Log audit action
+  try {
+    await logAuditActionPg(
+      { id: data.recordedById, name: data.recordedByName, role: 'servant' },
+      'RECORD_VISITATION',
+      'pastoral_visitation',
+      id,
+      `تسجيل افتقاد (${data.method}) للمخدوم ${data.memberId}`
+    );
+  } catch (err) {
+    console.error('Error logging audit action:', err);
+  }
+
+  return res[0];
+}
+
+export async function getPastoralVisitationsPg(options?: {
+  familyId?: string;
+  memberId?: string;
+  servantId?: string;
+  method?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+}): Promise<any[]> {
+  let sql = `
+    SELECT 
+      pv.*,
+      sm.full_name as member_name,
+      sm.code as member_code,
+      sm.stage as member_stage,
+      sm.guardian_name,
+      sm.guardian_phone,
+      sm.address,
+      sm.gender as member_gender,
+      f.name as family_name
+    FROM pastoral_visitations pv
+    JOIN served_members sm ON pv.member_id = sm.id
+    LEFT JOIN families f ON pv.family_id = f.id OR sm.current_family_id = f.id
+    WHERE 1=1
+  `;
+  const params: any[] = [];
+
+  if (options?.familyId && options.familyId !== 'all') {
+    params.push(options.familyId);
+    sql += ` AND (pv.family_id = $${params.length} OR sm.current_family_id = $${params.length})`;
+  }
+
+  if (options?.memberId) {
+    params.push(options.memberId);
+    sql += ` AND pv.member_id = $${params.length}`;
+  }
+
+  if (options?.servantId) {
+    params.push(options.servantId);
+    sql += ` AND $${params.length} = ANY(pv.servant_ids)`;
+  }
+
+  if (options?.method && options.method !== 'all') {
+    params.push(options.method);
+    sql += ` AND pv.method = $${params.length}`;
+  }
+
+  if (options?.dateFrom) {
+    params.push(options.dateFrom);
+    sql += ` AND pv.visitation_date >= $${params.length}`;
+  }
+
+  if (options?.dateTo) {
+    params.push(options.dateTo);
+    sql += ` AND pv.visitation_date <= $${params.length}`;
+  }
+
+  sql += ` ORDER BY pv.visitation_date DESC, pv.created_at DESC`;
+
+  if (options?.limit) {
+    params.push(options.limit);
+    sql += ` LIMIT $${params.length}`;
+  }
+
+  return queryPg(sql, params);
+}
+
+export async function deletePastoralVisitationPg(id: string): Promise<boolean> {
+  await queryPg(`DELETE FROM pastoral_visitations WHERE id = $1`, [id]);
+  return true;
+}
+
+

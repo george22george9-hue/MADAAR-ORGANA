@@ -437,6 +437,31 @@ export interface FollowupContactLog {
   created_by: string;
 }
 
+export type VisitationMethod = 'home_visit' | 'phone_call' | 'church_meeting';
+
+export interface PastoralVisitation {
+  id: string;
+  member_id: string;
+  member_name?: string;
+  member_code?: string;
+  member_stage?: string;
+  guardian_name?: string;
+  guardian_phone?: string;
+  address?: string;
+  member_gender?: 'male' | 'female';
+  family_id?: string;
+  family_name?: string;
+  visitation_date: string;
+  method: VisitationMethod;
+  servant_ids: string[];
+  servant_names: string[];
+  notes: string;
+  recorded_by_id?: string;
+  recorded_by_name?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
 export interface FollowupTask {
   id: string;
   alert_id?: string;

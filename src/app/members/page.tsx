@@ -8,7 +8,8 @@
 import React, { useEffect, useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/lib/context/auth-context';
-import { ServedMember, Family, Servant, MemberHistoryLog, MemberAcademicHistory } from '@/types/organa';
+import { ServedMember, Family, Servant, MemberHistoryLog, MemberAcademicHistory, PastoralVisitation } from '@/types/organa';
+import { RecordVisitationModal } from '@/components/visitations/RecordVisitationModal';
 import {
   Users,
   Search,
@@ -59,9 +60,12 @@ export default function MembersPage() {
   const [viewingMember, setViewingMember] = useState<ServedMember | null>(null);
   const [memberHistory, setMemberHistory] = useState<MemberHistoryLog[]>([]);
   const [academicHistory, setAcademicHistory] = useState<MemberAcademicHistory[]>([]);
-  const [activeHistoryTab, setActiveHistoryTab] = useState<'info' | 'history' | 'academic'>('info');
+  const [memberVisitations, setMemberVisitations] = useState<PastoralVisitation[]>([]);
+  const [loadingMemberVisitations, setLoadingMemberVisitations] = useState(false);
+  const [activeHistoryTab, setActiveHistoryTab] = useState<'info' | 'visitations' | 'history' | 'academic'>('info');
   const [showModal, setShowModal] = useState(false);
   const [editingMember, setEditingMember] = useState<ServedMember | null>(null);
+  const [visitationModalMember, setVisitationModalMember] = useState<ServedMember | null>(null);
 
   // Transfer modal
   const [transferringMember, setTransferringMember] = useState<ServedMember | null>(null);
@@ -116,6 +120,13 @@ export default function MembersPage() {
       fetch(`/api/members/${m.id}/history`)
         .then(r => r.json())
         .then(json => { if (json.success) setAcademicHistory(json.history || []); });
+
+      setLoadingMemberVisitations(true);
+      fetch(`/api/visitations?memberId=${m.id}`)
+        .then(r => r.json())
+        .then(json => { if (json.success) setMemberVisitations(json.visitations || []); })
+        .catch(console.error)
+        .finally(() => setLoadingMemberVisitations(false));
     } catch (err) {
       console.error(err);
     }
@@ -752,18 +763,36 @@ export default function MembersPage() {
                     <div className="text-xs text-[#81777A]">{viewingMember.current_family_name}</div>
                   </div>
                 </div>
-                <button onClick={() => setViewingMember(null)} className="text-[#81777A] hover:text-[#282326]">✕</button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setVisitationModalMember(viewingMember)}
+                    className="px-3 py-1.5 rounded-xl bg-linear-to-l from-[#702C3B] to-[#551D2A] text-white font-bold text-[11px] flex items-center gap-1.5 shadow-xs hover:shadow-md transition-all cursor-pointer"
+                  >
+                    <HeartHandshake className="w-3.5 h-3.5" />
+                    <span>تسجيل افتقاد 🏠</span>
+                  </button>
+                  <button onClick={() => setViewingMember(null)} className="text-[#81777A] hover:text-[#282326]">✕</button>
+                </div>
               </div>
 
               {/* Tabs */}
-              <div className="flex items-center gap-2 border-b border-[#EAE3E4] pb-2 text-xs">
+              <div className="flex items-center gap-2 border-b border-[#EAE3E4] pb-2 text-xs overflow-x-auto">
                 <button
                   onClick={() => setActiveHistoryTab('info')}
-                  className={`pb-1 px-3 font-bold transition-colors ${
+                  className={`pb-1 px-3 font-bold transition-colors shrink-0 ${
                     activeHistoryTab === 'info' ? 'border-b-2 border-[#702C3B] text-[#702C3B]' : 'text-[#81777A]'
                   }`}
                 >
-                  البيانات والافتقاد
+                  البيانات
+                </button>
+                <button
+                  onClick={() => setActiveHistoryTab('visitations')}
+                  className={`pb-1 px-3 font-bold transition-colors flex items-center gap-1 shrink-0 ${
+                    activeHistoryTab === 'visitations' ? 'border-b-2 border-[#702C3B] text-[#702C3B]' : 'text-[#81777A]'
+                  }`}
+                >
+                  <HeartHandshake className="w-3.5 h-3.5" />
+                  <span>الافتقادات ({memberVisitations.length})</span>
                 </button>
                 <button
                   onClick={() => setActiveHistoryTab('academic')}
@@ -868,6 +897,48 @@ export default function MembersPage() {
                     <span className="text-[#81777A] block mb-1">العنوان والمقر:</span>
                     <span className="text-[#282326] font-medium">{viewingMember.address || 'سندبيس'}</span>
                   </div>
+                </div>
+              )}
+
+              {activeHistoryTab === 'visitations' && (
+                <div className="space-y-2.5 max-h-72 overflow-y-auto text-xs">
+                  {loadingMemberVisitations ? (
+                    <div className="text-center py-6 text-[#81777A]">جاري تحميل سجل الافتقادات...</div>
+                  ) : memberVisitations.length === 0 ? (
+                    <div className="text-center py-8 text-[#81777A] space-y-2">
+                      <div className="font-bold text-stone-700">لا توجد زيارات أو اتصالات مسجلة لهذا المخدوم بعد</div>
+                      <p className="text-[11px] text-stone-500">سجل أول افتقاد لتوثيق متابعة أحوال هذا المخدوم</p>
+                      <button
+                        onClick={() => setVisitationModalMember(viewingMember)}
+                        className="px-3.5 py-1.5 rounded-xl bg-[#702C3B] text-white text-xs font-bold inline-flex items-center gap-1 cursor-pointer shadow-xs"
+                      >
+                        <HeartHandshake className="w-3.5 h-3.5" />
+                        <span>تسجيل أول افتقاد الآن</span>
+                      </button>
+                    </div>
+                  ) : (
+                    memberVisitations.map((v) => (
+                      <div key={v.id} className="p-3 bg-[#FAF5F6] rounded-xl border border-[#EAE3E4] space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-bold text-[#702C3B] flex items-center gap-1">
+                            {v.method === 'home_visit'
+                              ? '🏠 زيارة منزلية'
+                              : v.method === 'phone_call'
+                              ? '📞 اتصال هاتفي'
+                              : '⛪ مقابلة في الكنيسة'}
+                          </span>
+                          <span className="text-stone-500 font-medium">{v.visitation_date}</span>
+                        </div>
+                        <div className="text-[11px] text-stone-700 flex flex-wrap items-center gap-1">
+                          <span className="font-bold text-stone-800">الخدام:</span>
+                          <span>{v.servant_names?.join('، ') || 'خدام الأسرة'}</span>
+                        </div>
+                        <div className="text-[11px] text-[#282326] bg-white p-2 rounded-lg border border-stone-200 leading-relaxed whitespace-pre-wrap">
+                          {v.notes}
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
 
@@ -1196,6 +1267,21 @@ export default function MembersPage() {
             </div>
           </div>
         )}
+
+        {/* Record Visitation Modal */}
+        <RecordVisitationModal
+          isOpen={!!visitationModalMember}
+          onClose={() => setVisitationModalMember(null)}
+          preSelectedMember={visitationModalMember}
+          onSuccess={() => {
+            if (viewingMember) {
+              fetch(`/api/visitations?memberId=${viewingMember.id}`)
+                .then(r => r.json())
+                .then(json => { if (json.success) setMemberVisitations(json.visitations || []); });
+            }
+            loadData();
+          }}
+        />
       </div>
     </AppLayout>
   );
