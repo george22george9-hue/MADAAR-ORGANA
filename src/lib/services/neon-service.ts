@@ -37,6 +37,7 @@ import {
   FollowupPriority,
 } from '@/types/organa';
 import { getStagesForFamily, getFamilyCodeLetter, getStageCodeLetter } from '@/lib/constants/stages';
+import { getMemberInitialsPrefix } from '@/lib/utils/member-code';
 import { normalizePhone } from '@/lib/utils/phone';
 
 export function isNeonConfigured(): boolean {
@@ -1317,12 +1318,10 @@ export async function createServedMemberPg(data: {
   const id = `mem-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const stageVal = data.stage?.trim() || 'عام';
 
-  // Smart Structured Code: [FamilyLetter][StageLetter][01..99]
+  // Permanent Personal Member Code: [MemberInitial][FatherInitial][01..99]
   let code = data.code?.trim();
   if (!code || code.startsWith('MEM-')) {
-    const famLetter = getFamilyCodeLetter(data.current_family_id);
-    const stageLetter = getStageCodeLetter(stageVal);
-    const prefix = `${famLetter}${stageLetter}`;
+    const prefix = getMemberInitialsPrefix(data.full_name, data.guardian_name);
     const latest = await queryOnePg<{ code: string }>(`
       SELECT code FROM served_members 
       WHERE code LIKE $1 
@@ -1331,7 +1330,8 @@ export async function createServedMemberPg(data: {
     `, [`${prefix}%`]);
     let nextNum = 1;
     if (latest?.code && latest.code.startsWith(prefix)) {
-      const parsed = parseInt(latest.code.replace(prefix, ''), 10);
+      const numPart = latest.code.replace(prefix, '');
+      const parsed = parseInt(numPart, 10);
       if (!isNaN(parsed)) nextNum = parsed + 1;
     }
     code = `${prefix}${String(nextNum).padStart(2, '0')}`;
